@@ -59,8 +59,8 @@ ENV BFF_PORT=3000 \
 ENTRYPOINT ["/usr/local/bin/swiyu-issuer-web-bff"]
 LABEL org.opencontainers.image.title="swiyu-issuer-web" \
       org.opencontainers.image.description="SWIYU issuer — web front end (SPA + BFF)" \
-      org.opencontainers.image.source="https://github.com/Gubaer/swiyu-rs" \
-      org.opencontainers.image.url="https://github.com/Gubaer/swiyu-rs" \
-      org.opencontainers.image.documentation="https://github.com/Gubaer/swiyu-rs/tree/master/swiyu-issuer-web" \
+      org.opencontainers.image.source="https://github.com/Gubaer/swiyu-issuer" \
+      org.opencontainers.image.url="https://github.com/Gubaer/swiyu-issuer" \
+      org.opencontainers.image.documentation="https://github.com/Gubaer/swiyu-issuer/tree/master/web" \
       org.opencontainers.image.vendor="Gubaer" \
       org.opencontainers.image.licenses="MIT"
