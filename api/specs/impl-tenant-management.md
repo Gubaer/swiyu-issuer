@@ -72,7 +72,7 @@ There is intentionally no management-API counterpart: tenant onboarding (product
 ## Persistence module
 
 ```
-swiyu-issuer/src/persistence/tenants.rs   — extended with:
+api/src/persistence/tenants.rs   — extended with:
     fn insert(...)                                    — INSERT INTO tenants
     fn update_metadata(...)                           — partial UPDATE of partner_id / display_name / description
     fn find_by_partner_id(conn, partner_id)           — SELECT … WHERE partner_id = $1; UNIQUE on partner_id makes it deterministic

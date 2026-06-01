@@ -7,7 +7,7 @@ The protocol-side picture (token endpoint, grant types, the four ePortal credent
 ## Module location
 
 ```
-swiyu-issuer/src/domain/oauth2/
+api/src/domain/oauth2/
     mod.rs              — TokenProvider trait, AnyTokenProvider, errors, re-exports
     refresh_token.rs    — RefreshToken newtype (zeroizing, masked Debug)
     cached_token.rs     — CachedToken in-memory state
@@ -343,7 +343,7 @@ All three secret columns store **plaintext UTF-8** in the v1 schema, matching ho
 ### Persistence module
 
 ```
-swiyu-issuer/src/persistence/tenants.rs   — extended with:
+api/src/persistence/tenants.rs   — extended with:
     fn read_oauth_credentials_for_update(...)       — SELECT … FOR UPDATE
     fn write_oauth_refresh_token(...)               — UPDATE oauth_refresh_token
 ```
@@ -387,7 +387,7 @@ New env vars consumed by the binary at startup, passed into `ProviderRegistry::n
 | `SWIYU_TOKEN_REFRESH_FRACTION` | `0.75` | Fraction of `expires_in` after which a token is refreshed; expressed as a `f32`, valid range `[0.5, 0.95]` |
 | `SWIYU_TOKEN_HTTP_TIMEOUT_SECS` | `15` | Per-request timeout for token-endpoint calls |
 
-`SWIYU_ACCESS_TOKEN` is removed: the runtime no longer reads a manually-pasted access token. The transitional comment in `swiyu-issuer/.env.example` is deleted and the four OAuth2 vars are promoted to the active configuration block.
+`SWIYU_ACCESS_TOKEN` is removed: the runtime no longer reads a manually-pasted access token. The transitional comment in `api/.env.example` is deleted and the four OAuth2 vars are promoted to the active configuration block.
 
 ## Local development seeding
 
@@ -417,7 +417,7 @@ The entrypoint runs `bootstrap-dev-from-env` in two passes so per-tenant Vault T
 bootstrap-dev-tenant:
   build:
     context: ..
-    dockerfile: swiyu-issuer/Dockerfile
+    dockerfile: api/Dockerfile
     target: runtime-cli
   depends_on:
     postgres:

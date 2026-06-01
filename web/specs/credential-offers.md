@@ -115,7 +115,7 @@ GET /api/issuers/{issuer_id}/credential-offers
     &cursor=<opaque>         (optional)
 ```
 
-Proxies to mgmtapi `GET /api/v1/issuers/{issuer_id}/credential-offers` (operationId `listCredentialOffers`, see `swiyu-issuer/openapi-mgmt.yml`). The BFF forwards `limit` and `cursor` verbatim; `state` is **not** forwarded in this slice (no state filter UI yet).
+Proxies to mgmtapi `GET /api/v1/issuers/{issuer_id}/credential-offers` (operationId `listCredentialOffers`, see `api/openapi-mgmt.yml`). The BFF forwards `limit` and `cursor` verbatim; `state` is **not** forwarded in this slice (no state filter UI yet).
 
 Response (`200`):
 

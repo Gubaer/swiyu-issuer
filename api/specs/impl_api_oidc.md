@@ -30,7 +30,7 @@ This slice provides those wallet-facing endpoints and is the first writer of the
 
 ## Module layout
 
-`swiyu-issuer/src/api_oidc/`:
+`api/src/api_oidc/`:
 
 - `mod.rs` — `router(state) -> axum::Router`; re-exports.
 - `state.rs` — `AppState` (pool, clock, config, signer registry).
@@ -43,7 +43,7 @@ This slice provides those wallet-facing endpoints and is the first writer of the
 - `nonce.rs` — `c_nonce` issuance and lookup.
 - `signer.rs` — issuer-side credential signing: maps an `IssuerId` to its DID and `KeyStore` handle, signs an SD-JWT VC, embeds `cnf` from the wallet proof.
 
-`swiyu-issuer/src/persistence/oidc/` (new namespace):
+`api/src/persistence/oidc/` (new namespace):
 
 - `mod.rs` — module declarations and re-exports.
 - `credential_offers.rs` — `find_by_pre_auth_code` and `mark_issued`. Kept separate from `persistence::credential_offers` so the management binary cannot accidentally call `mark_issued` (resolves the open question recorded in [`impl_api_management.md`](impl_api_management.md)).
@@ -52,7 +52,7 @@ This slice provides those wallet-facing endpoints and is the first writer of the
 
 The bare OID4VCI pre-auth code lives in a nullable `pre_auth_code` column on `credential_offers` directly — see *GET /credential-offer/{offer_id}* and `aspect-persistence.md` for the "pending-window plaintext" rationale. An earlier design used a separate `oidc_offer_bridge` table; that table added complexity without isolating a leak surface from its parent row, and the column on `credential_offers` is the simpler design that covers the same durability and lifecycle requirements.
 
-`swiyu-issuer/src/bin/swiyu-issuer-oidcapi.rs` stays thin: load config → connect pool → run migrations → load issuer signing keys → build `Router` → bind and serve with graceful shutdown.
+`api/src/bin/swiyu-issuer-oidcapi.rs` stays thin: load config → connect pool → run migrations → load issuer signing keys → build `Router` → bind and serve with graceful shutdown.
 
 ## Public surface
 
@@ -281,7 +281,7 @@ Although wallet routes don't carry a tenant, every persistence function still re
 ## Tests
 
 - Unit tests inside the handler modules exercising request / response shapes against an in-process router with a real Postgres pool and a real signing key (the dev key from the fixture keystore).
-- Integration tests under `swiyu-issuer/tests/` cover the full redemption flow:
+- Integration tests under `api/tests/` cover the full redemption flow:
 - **Happy path**: management API creates an offer; the OIDC binary fetches the offer body, exchanges the pre-auth code for a token + nonce, presents a wallet proof, receives a valid SD-JWT VC. The offer row is `issued` with `issued_at` set.
 - **Expired offer**: token endpoint returns `invalid_grant`.
 - **Replayed pre-auth code**: second token request returns `invalid_grant` (unique constraint on access-token offer_id).
@@ -313,7 +313,7 @@ Steps 1–4 may land together or in separate commits. Step 5 must come last.
 - **Rate limiting on the offer-uri endpoint, single-fetch semantics.** A wallet that loses the body can refetch it. Tighten this once a real rate-limiting layer lands.
 - **Status-list integration.** Issued credentials carry no `status` claim. The status-list slice adds it.
 - **`did:webvh` end-to-end coverage.** Per `CLAUDE.md`, only `did:tdw` 0.3 is testable end-to-end against the SWIYU integration registry. `did:webvh` paths exist but are not validated against any registry in this slice.
-- **OpenAPI generation.** `swiyu-issuer/openapi-mgmt.yml` is hand-written; the OIDC routes are added there manually.
+- **OpenAPI generation.** `api/openapi-mgmt.yml` is hand-written; the OIDC routes are added there manually.
 - **`application/problem+json` error bodies.** Not introduced here either.
 
 ## Open

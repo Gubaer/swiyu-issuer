@@ -6,7 +6,7 @@ Status: living document. Reflects the persistence layer as it stands today.
 
 ## Module layout
 
-`swiyu-issuer/src/persistence/`:
+`api/src/persistence/`:
 
 - `mod.rs` — module declarations, the `ListPage<T>` paginated-result type, and re-exports.
 - `pool.rs` — `connect(database_url)` and `run_migrations(pool)`.
@@ -16,7 +16,7 @@ Status: living document. Reflects the persistence layer as it stands today.
 - `tenant_secret_keys.rs` — pure functions that derive the `SecretEncryptionEngine` key names for a given tenant (`tenant-<tenant_id>-oauth2_client_secret`, `tenant-<tenant_id>-oauth2_refresh_token`). Kept separate so the naming convention has one home and the write/read paths in `tenants.rs` cannot drift.
 - `oidc/` — submodule grouping the OIDC token endpoint's persistent state: `access_tokens.rs`, `nonces.rs`, plus an `oidc/credential_offers.rs` for offer lookups the OIDC handlers need.
 
-`swiyu-issuer/migrations/` holds versioned `.sql` migration files. The binaries call `sqlx::migrate!("./migrations").run(pool)` at startup.
+`api/migrations/` holds versioned `.sql` migration files. The binaries call `sqlx::migrate!("./migrations").run(pool)` at startup.
 
 ## Public surface
 
@@ -56,7 +56,7 @@ Format validation lives in the newtype constructor (`generate()` produces only v
 
 ## Schema
 
-Migrations live in `swiyu-issuer/migrations/`. Two files are in place today:
+Migrations live in `api/migrations/`. Two files are in place today:
 
 - `20260430_000001_init.sql` — single pre-production baseline. Collapses the original 0001 through 0015 migrations together with the subsequent OAuth2 column additions and their re-typing for encryption-at-rest. The expand/contract history of the alpha period was discarded because the data is throwaway and the file is easier to read as one piece.
 

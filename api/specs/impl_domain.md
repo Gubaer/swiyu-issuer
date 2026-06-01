@@ -1,6 +1,6 @@
 # Implementation: domain layer
 
-This document is a structural map of `swiyu-issuer/src/domain/`. It describes what each module owns and points at the slice-specific impl docs that carry the depth. The vocabulary and modelling decisions behind the entities live in [`aspect-domain.md`](aspect-domain.md); the persistence shape lives in [`impl_persistence.md`](impl_persistence.md).
+This document is a structural map of `api/src/domain/`. It describes what each module owns and points at the slice-specific impl docs that carry the depth. The vocabulary and modelling decisions behind the entities live in [`aspect-domain.md`](aspect-domain.md); the persistence shape lives in [`impl_persistence.md`](impl_persistence.md).
 
 Status: living document. Reflects the current layout of the domain module.
 

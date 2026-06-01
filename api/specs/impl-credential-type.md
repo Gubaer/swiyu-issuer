@@ -10,13 +10,13 @@ Status: preliminary; living document. Supersedes the earlier `impl_credential_sc
 
 New and extended code:
 
-- `swiyu-issuer/src/domain/credential_type.rs` — `CredentialType` aggregate, `CredentialTypeId`, `RevocationMode`. Replaces the compile-time `vct.rs` catalogue.
-- `swiyu-issuer/src/domain/issuer_credential_type.rs` — `IssuerCredentialTypeAssignment` aggregate; the *(issuer, credential_type)* link row.
-- `swiyu-issuer/src/persistence/credential_types.rs` — CRUD on `credential_types`, per-blob accessors for `claim_schema` / `display` / `claims`.
-- `swiyu-issuer/src/persistence/issuer_credential_types.rs` — assign / un-assign / list-by-issuer / list-by-type.
-- `swiyu-issuer/src/api_management/credential_types.rs` — tenant-admin handlers for the credential-type and assignment endpoints.
-- `swiyu-issuer/src/api_oidc/metadata.rs` — extended to project `credential_configurations_supported` from the joined `credential_types` × `issuer_credential_types` rows.
-- `swiyu-issuer/src/state/validators.rs` — the compiled-validator cache used by the issuance handler (`api_oidc::credential`) and by the `PUT /schema` handler to reject invalid uploads.
+- `api/src/domain/credential_type.rs` — `CredentialType` aggregate, `CredentialTypeId`, `RevocationMode`. Replaces the compile-time `vct.rs` catalogue.
+- `api/src/domain/issuer_credential_type.rs` — `IssuerCredentialTypeAssignment` aggregate; the *(issuer, credential_type)* link row.
+- `api/src/persistence/credential_types.rs` — CRUD on `credential_types`, per-blob accessors for `claim_schema` / `display` / `claims`.
+- `api/src/persistence/issuer_credential_types.rs` — assign / un-assign / list-by-issuer / list-by-type.
+- `api/src/api_management/credential_types.rs` — tenant-admin handlers for the credential-type and assignment endpoints.
+- `api/src/api_oidc/metadata.rs` — extended to project `credential_configurations_supported` from the joined `credential_types` × `issuer_credential_types` rows.
+- `api/src/state/validators.rs` — the compiled-validator cache used by the issuance handler (`api_oidc::credential`) and by the `PUT /schema` handler to reject invalid uploads.
 
 ## Domain types
 
@@ -286,11 +286,11 @@ The seeded dev credential type is created by an extension of the existing `tenan
 
 ## Tests
 
-Tests follow the repo's existing layout conventions: `#[cfg(test)]` modules inline with the code under test for unit coverage; `swiyu-issuer/tests/` for cross-module integration coverage via `sqlx::test`. Shared fixtures (e.g. credential-type / assignment seed helpers, validator-cache builders, sample `claim_schema` documents) belong in **`test_support`** and are reused across this slice's tests and any other slice that needs them — no per-test duplication of seed code or sample documents.
+Tests follow the repo's existing layout conventions: `#[cfg(test)]` modules inline with the code under test for unit coverage; `api/tests/` for cross-module integration coverage via `sqlx::test`. Shared fixtures (e.g. credential-type / assignment seed helpers, validator-cache builders, sample `claim_schema` documents) belong in **`test_support`** and are reused across this slice's tests and any other slice that needs them — no per-test duplication of seed code or sample documents.
 
 - Unit tests in `domain/credential_type.rs` cover the `RevocationMode` enum round-trips, `try_retire` precondition (cannot retire a row already retired), and `try_update_structured` precondition (cannot edit a retired row).
 - Unit tests in `state/validators.rs` cover lazy compile on first use, double-check insertion under contention, `updated_at`-driven re-compile on the next issuance after a schema change, and the broken-schema path (a credential type with a malformed `claim_schema` fails its first issuance with HTTP 500 but does not affect issuance of other types).
-- Integration tests under `swiyu-issuer/tests/` driving full flows with a real Postgres pool (via `sqlx::test`), using `test_support` fixtures for tenant / issuer / credential-type seeding:
+- Integration tests under `api/tests/` driving full flows with a real Postgres pool (via `sqlx::test`), using `test_support` fixtures for tenant / issuer / credential-type seeding:
   - Create a credential type, assign it to an issuer, issue a credential through the OIDC flow.
   - Two tenants create rows with the same `vct` but different schemas; the validator cache distinguishes them; cross-tenant access returns `404`.
   - Retire a credential type with an active assignment: the assignment is removed, the OIDC metadata projection drops the entry, already-issued credentials remain valid.

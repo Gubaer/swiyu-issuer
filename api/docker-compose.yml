@@ -1,11 +1,11 @@
 # Local PostgreSQL, HashiCorp Vault, swiyu-issuer-mgmtapi, and
 # swiyu-issuer-oidcapi for swiyu-issuer development.
 #
-# Usage (run from this directory, swiyu-issuer/):
+# Usage (run from this directory, api/):
 #   docker compose up -d            # builds + starts everything
 #
 # Or from the workspace root:
-#   docker compose -f swiyu-issuer/docker-compose.yml up -d
+#   docker compose -f api/docker-compose.yml up -d
 #
 # `docker compose build <service>` rebuilds a single binary image.
 # `docker compose up -d --build <service>` rebuilds and restarts it.
@@ -124,7 +124,7 @@ services:
   bootstrap-dev-tenant:
     build:
       context: ..
-      dockerfile: swiyu-issuer/Dockerfile
+      dockerfile: api/Dockerfile
       target: runtime-cli
     container_name: swiyu-issuer-bootstrap-dev-tenant
     depends_on:
@@ -203,7 +203,7 @@ services:
   bootstrap-dev-issuer:
     build:
       context: ..
-      dockerfile: swiyu-issuer/Dockerfile
+      dockerfile: api/Dockerfile
       target: runtime-cli
     container_name: swiyu-issuer-bootstrap-dev-issuer
     depends_on:
@@ -232,7 +232,7 @@ services:
     image: swiyu-issuer-mgmtapi
     build:
       context: ..
-      dockerfile: swiyu-issuer/Dockerfile
+      dockerfile: api/Dockerfile
       target: runtime-mgmtapi
     container_name: swiyu-issuer-mgmtapi
     depends_on:
@@ -288,7 +288,7 @@ services:
     image: swiyu-issuer-oidcapi
     build:
       context: ..
-      dockerfile: swiyu-issuer/Dockerfile
+      dockerfile: api/Dockerfile
       target: runtime-oidcapi
     container_name: swiyu-issuer-oidcapi
     depends_on:
@@ -335,7 +335,7 @@ services:
     image: swiyu-issuer-cli
     build:
       context: ..
-      dockerfile: swiyu-issuer/Dockerfile
+      dockerfile: api/Dockerfile
       target: runtime-cli
     profiles:
       - tools

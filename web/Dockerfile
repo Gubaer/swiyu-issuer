@@ -4,23 +4,25 @@
 # one port — the mgmtapi and registries live elsewhere and are reached via
 # the BFF's env-configured URLs.
 #
-# The build context must be the *workspace root* (one directory up from
-# this file) because the BFF depends on the sibling crates swiyu-core and
-# swiyu-registries via `path = "../..."`:
+# The build context must be the *repo root* (one directory up from this
+# file) because that is where the workspace Cargo.toml / Cargo.lock and the
+# `.cargo/config.toml` live. The shared crates swiyu-core and swiyu-registries
+# are git dependencies (see web/bff/Cargo.toml) that cargo fetches over HTTPS
+# at build time — network access, no SSH credentials. Run from the repo root:
 #
-#   docker build -f swiyu-issuer-web/Dockerfile -t swiyu-issuer-web:dev .
+#   docker build -f web/Dockerfile -t swiyu-issuer-web:dev .
 
 # ---- SPA build ----------------------------------------------------------
 FROM node:22-bookworm-slim AS spa-builder
 WORKDIR /spa
 # Copy manifests first so `npm ci` is cached unless dependencies change.
-COPY swiyu-issuer-web/spa/package.json swiyu-issuer-web/spa/package-lock.json ./
+COPY web/spa/package.json web/spa/package-lock.json ./
 RUN npm ci
-COPY swiyu-issuer-web/spa/ ./
+COPY web/spa/ ./
 RUN npm run build
 
 # ---- BFF build ----------------------------------------------------------
-# Mirrors swiyu-issuer/Dockerfile: cargo-chef caches dependency compilation,
+# Mirrors api/Dockerfile: cargo-chef caches dependency compilation,
 # and `-bookworm` keeps the builder's glibc in sync with the slim runtime.
 ARG RUST_TAG=latest-rust-1-bookworm
 FROM lukemathwalker/cargo-chef:${RUST_TAG} AS chef

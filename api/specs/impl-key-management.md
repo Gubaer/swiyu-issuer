@@ -13,7 +13,7 @@ The fundamental rule from the aspect spec applies: a private key never leaves th
 Trait, supporting types, and backend implementations live together under one module in the domain layer of the `swiyu-issuer` crate:
 
 ```
-swiyu-issuer/src/domain/signing_engine/
+api/src/domain/signing_engine/
     mod.rs       — trait, KeyRole, KeyPairId, errors, re-exports
     any.rs       — AnySigningEngine (runtime dispatch enum)
     dev.rs       — DevSigningEngine

@@ -6,12 +6,12 @@ This document describes how the issuer aspect (see [`aspect-issuer.md`](aspect-i
 
 New code added by this slice:
 
-- `swiyu-issuer/src/domain/issuer.rs` — revised `Issuer` aggregate with the key-triple, lifecycle state, and required identification fields.
-- `swiyu-issuer/src/domain/operation_task/` — `OperationTask` aggregate, task state, task type, classification helpers.
-- `swiyu-issuer/src/persistence/issuers.rs` — extended with insert/update/find for the new columns.
-- `swiyu-issuer/src/persistence/operation_tasks.rs` — new persistence module for the task queue.
-- `swiyu-issuer/src/worker/` — task-dispatching worker, runs as a `tokio::spawn`-ed task alongside the management API server.
-- `swiyu-issuer/src/api_management/` — new handlers for `POST /api/v1/issuers`, `GET /api/v1/issuers`, `GET /api/v1/issuers/{id}`, plus task polling endpoints. Wired into the existing `router(state)`.
+- `api/src/domain/issuer.rs` — revised `Issuer` aggregate with the key-triple, lifecycle state, and required identification fields.
+- `api/src/domain/operation_task/` — `OperationTask` aggregate, task state, task type, classification helpers.
+- `api/src/persistence/issuers.rs` — extended with insert/update/find for the new columns.
+- `api/src/persistence/operation_tasks.rs` — new persistence module for the task queue.
+- `api/src/worker/` — task-dispatching worker, runs as a `tokio::spawn`-ed task alongside the management API server.
+- `api/src/api_management/` — new handlers for `POST /api/v1/issuers`, `GET /api/v1/issuers`, `GET /api/v1/issuers/{id}`, plus task polling endpoints. Wired into the existing `router(state)`.
 
 The HTTP client for the SWIYU Identifier Registry lives in a separate workspace crate, [`swiyu-registries`](../../swiyu-registries/), not inside `swiyu-issuer`. It is shared infrastructure: a future verifier service, an async-friendly variant of `swiyu-didtool`, and the eventual Status- and Trust-Registry clients all live there too. swiyu-issuer pulls it in as a dependency with the `identifier` feature enabled.
 
@@ -175,7 +175,7 @@ The `dispatch` partial index keeps the worker's "find next runnable task" query 
 
 ## Worker
 
-A single `tokio::spawn`-ed task launched by `swiyu-issuer-mgmtapi` at startup. The worker code lives in `swiyu-issuer/src/worker/` so it is reachable from the binary's `main` and from integration tests.
+A single `tokio::spawn`-ed task launched by `swiyu-issuer-mgmtapi` at startup. The worker code lives in `api/src/worker/` so it is reachable from the binary's `main` and from integration tests.
 
 ### Dispatch loop (sketch)
 
@@ -304,7 +304,7 @@ Endpoints for `rotate_keys` and `deactivate_issuer` ship in subsequent slices.
 ## Tests
 
 - Unit tests inside the worker module exercising each step function against in-memory mocks of the registry client and the SigningEngine.
-- Integration tests under `swiyu-issuer/tests/` driving full task choreographies with a real Postgres pool (via `sqlx::test`) and a stubbed registry. Each task type gets its own happy-path test plus retry-on-registry-failure and resume-after-crash variants.
+- Integration tests under `api/tests/` driving full task choreographies with a real Postgres pool (via `sqlx::test`) and a stubbed registry. Each task type gets its own happy-path test plus retry-on-registry-failure and resume-after-crash variants.
 - Specifics (helper builders, stubbing strategy for the registry client) settle during the first implementation pass.
 
 ## Out of scope for v1

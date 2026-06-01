@@ -29,13 +29,13 @@ The earlier sketch split issuer selection and type selection into separate steps
 
 The issuer management API already supports everything needed; no backend changes are required.
 
-- `POST /api/v1/issuers/{issuer_id}/credential-offers` — `swiyu-issuer/src/api_management/credential_offers.rs`. Request body: `credential_type_id` (bare bs58), `claims` (JSON, validated against the type's compiled JSON Schema), `expires_in_seconds` (optional; default 600, bounded 60–3600). Returns `201` with `id`, `pre_auth_code`, `offer_deeplink`, `expires_at`. The pre-auth code is returned exactly once — only its hash is persisted, so it cannot be re-fetched.
+- `POST /api/v1/issuers/{issuer_id}/credential-offers` — `api/src/api_management/credential_offers.rs`. Request body: `credential_type_id` (bare bs58), `claims` (JSON, validated against the type's compiled JSON Schema), `expires_in_seconds` (optional; default 600, bounded 60–3600). Returns `201` with `id`, `pre_auth_code`, `offer_deeplink`, `expires_at`. The pre-auth code is returned exactly once — only its hash is persisted, so it cannot be re-fetched.
 - `GET /api/v1/issuers/{issuer_id}/credential-types` — `list_assignments`. Returns `{ items: [GetCredentialTypeResponse] }`. This is the offer-type picker's option list. Note: this response deliberately omits `claim_schema` (blob columns are served separately to keep list pages small), so it cannot feed Monaco on its own.
 - `GET /api/v1/credential-types/{credential_type_id}/schema` — `get_schema`. Returns the raw JSON Schema (`application/schema+json`). This is the source for Monaco's live validation, fetched once the operator picks a type.
 
 ## BFF work — 3 new proxy endpoints
 
-Thin pass-throughs in the style of the existing offer read proxies (`swiyu-issuer-web/bff/src/upstream/mgmt_api.rs` + `swiyu-issuer-web/bff/src/routes/`).
+Thin pass-throughs in the style of the existing offer read proxies (`web/bff/src/upstream/mgmt_api.rs` + `web/bff/src/routes/`).
 
 1. `POST /api/issuers/{issuer_id}/credential-offers` → mgmt `create`. Returns the 201 body verbatim (pre-auth code + deeplink).
 2. `GET /api/issuers/{issuer_id}/credential-types` → `list_assignments`. The type picker's options.
@@ -46,7 +46,7 @@ Thin pass-throughs in the style of the existing offer read proxies (`swiyu-issue
 - **Monaco integration**: add the `monaco-editor` dependency, wire its web workers into the esbuild-based `@angular/build:application` builder, and wrap it in one small reusable standalone `JsonEditor` component. The component takes the value in/out and a `schema` input it pushes to Monaco's JSON `diagnosticsOptions`. This is the riskiest piece on Angular 21 + esbuild and is a candidate to spike on its own before the rest of the flow.
 - **Credential-types read service/store**: backs the type picker and the per-type schema fetch.
 - **Skeleton generator**: a small pure function that turns a JSON Schema into a best-effort schema-valid scaffold with sentinel placeholders, falling back to `{}` on constructs it cannot handle. Unit-test it directly against representative `claim_schema` shapes.
-- **Create-offer flow**: a three-step wizard (see UX flow). Step 1 combines the issuer select (reusing the existing issuer selection) with a dependent credential-type picker. Step 2 hosts the Monaco claims editor seeded from the skeleton, showing live errors, and the optional `expires_in_seconds` input. Mirror the existing `issuer-create` component pattern (`swiyu-issuer-web/spa/src/app/features/issuers/issuer-create.ts`) for consistency.
+- **Create-offer flow**: a three-step wizard (see UX flow). Step 1 combines the issuer select (reusing the existing issuer selection) with a dependent credential-type picker. Step 2 hosts the Monaco claims editor seeded from the skeleton, showing live errors, and the optional `expires_in_seconds` input. Mirror the existing `issuer-create` component pattern (`web/spa/src/app/features/issuers/issuer-create.ts`) for consistency.
 - **QR component**: a thin standalone `QrCode` wrapper over the `qrcode` package, rendering SVG; takes the value in, emits no events.
 - **Result view**: the terminal step 3 — QR of the deeplink + copyable deeplink and pre-auth code, with an unmissable "shown once" warning, since the values cannot be re-fetched.
 - **Entry point + routing**: a "New offer" action on the credential-offers list page.

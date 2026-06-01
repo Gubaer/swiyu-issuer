@@ -8,13 +8,13 @@ Status: preliminary; living document.
 
 New code added by this slice:
 
-- `swiyu-issuer/src/domain/issued_credential.rs` — `IssuedCredential` aggregate, `IssuedCredentialState`, `IssuedCredentialId`.
-- `swiyu-issuer/src/domain/status_list/` — the issuer aggregate (`StatusList` row with id, bitstring, version, publish-state columns), `StatusListId`, `StatusListIndex`, a re-export of `swiyu_core::statuslist::StatusValue`, and `wrapper.rs` (`build_signed`, the `statuslist+jwt` wrapper builder used by the publish worker). Bit-twiddling routes through `swiyu_core::statuslist::StatusList::from_raw / set_at / value_at / as_bytes`; no local bit-encoding module.
-- `swiyu-issuer/src/persistence/issued_credentials.rs` — insert / find / update for issued credentials.
-- `swiyu-issuer/src/persistence/status_lists.rs` — bitstring storage, atomic bit updates, allocation counter, publish-state columns.
-- `swiyu-issuer/src/worker/status_list_publisher.rs` — second dispatch loop alongside the existing `operation_task` worker; drives publishes to the SWIYU Status Registry.
-- `swiyu-issuer/src/api_management/issued_credentials.rs` — handlers for `GET`, `suspend`, `unsuspend`, `revoke`.
-- `swiyu-issuer/src/api_oidc/credential.rs` — extended to allocate a status-list bit index, embed the `status` claim, and insert the `IssuedCredential` row in the same transaction as the offer transition.
+- `api/src/domain/issued_credential.rs` — `IssuedCredential` aggregate, `IssuedCredentialState`, `IssuedCredentialId`.
+- `api/src/domain/status_list/` — the issuer aggregate (`StatusList` row with id, bitstring, version, publish-state columns), `StatusListId`, `StatusListIndex`, a re-export of `swiyu_core::statuslist::StatusValue`, and `wrapper.rs` (`build_signed`, the `statuslist+jwt` wrapper builder used by the publish worker). Bit-twiddling routes through `swiyu_core::statuslist::StatusList::from_raw / set_at / value_at / as_bytes`; no local bit-encoding module.
+- `api/src/persistence/issued_credentials.rs` — insert / find / update for issued credentials.
+- `api/src/persistence/status_lists.rs` — bitstring storage, atomic bit updates, allocation counter, publish-state columns.
+- `api/src/worker/status_list_publisher.rs` — second dispatch loop alongside the existing `operation_task` worker; drives publishes to the SWIYU Status Registry.
+- `api/src/api_management/issued_credentials.rs` — handlers for `GET`, `suspend`, `unsuspend`, `revoke`.
+- `api/src/api_oidc/credential.rs` — extended to allocate a status-list bit index, embed the `status` claim, and insert the `IssuedCredential` row in the same transaction as the offer transition.
 
 The HTTP client for the SWIYU Status Registry lives in [`swiyu-registries`](../../swiyu-registries/) under `swiyu-registries::status`, behind the `status` feature. swiyu-issuer enables that feature on its existing `swiyu-registries` dependency.
 
@@ -245,7 +245,7 @@ pub async fn revoke(
 
 ## Publish worker
 
-A second dispatch loop in `swiyu-issuer/src/worker/`, alongside the existing `operation_task` loop. Both run inside the same `tokio::spawn`-ed worker process launched by `swiyu-issuer-mgmtapi` at startup.
+A second dispatch loop in `api/src/worker/`, alongside the existing `operation_task` loop. Both run inside the same `tokio::spawn`-ed worker process launched by `swiyu-issuer-mgmtapi` at startup.
 
 ### Dispatch loop
 
@@ -284,7 +284,7 @@ Payload claims:
   - `bits`: `2`
   - `lst`: zlib-compressed, base64url-encoded (`URL_SAFE_NO_PAD`) bitstring. Compression is the IETF default; the Registry contract does not allow opting out.
 
-`build_signed(list, issuer, signing_engine)` lives in `swiyu-issuer/src/domain/status_list/wrapper.rs`. It zlib-compresses `list.bitstring`, base64url-encodes the result, builds the header and payload above, computes `SHA-256(header_b64 || "." || payload_b64)`, and signs that digest via `SigningEngine::sign` against `issuer.assertion_key_id`. The returned `String` is the compact JWT (`header_b64.payload_b64.signature_b64`).
+`build_signed(list, issuer, signing_engine)` lives in `api/src/domain/status_list/wrapper.rs`. It zlib-compresses `list.bitstring`, base64url-encodes the result, builds the header and payload above, computes `SHA-256(header_b64 || "." || payload_b64)`, and signs that digest via `SigningEngine::sign` against `issuer.assertion_key_id`. The returned `String` is the compact JWT (`header_b64.payload_b64.signature_b64`).
 
 ### Publish step
 
@@ -360,7 +360,7 @@ No `task_id` is returned for credential-lifecycle operations in v0.1.0; see [`as
 - Unit tests in `domain/status_list/` cover the issuer aggregate (`StatusList::new` zeros, `is_at_capacity`, `is_dirty`, version semantics) and `StatusListIndex` bounds. Bit-encoding correctness — LSB-first layout, the `Valid=0 / Revoked=1 / Suspended=2` mapping, and the `(index, value) → bytes → (index, value)` round-trip — lives in `swiyu_core::statuslist` and is not duplicated here.
 - Unit tests in `domain/status_list/wrapper.rs`: the JWT signature verifies under the issuer's assertion public key; `iat` matches the `now` passed in. (Bitstring encode/decode round-trip is a property of `swiyu_core::statuslist`.)
 - Unit tests in the publish worker module against a stubbed `StatusRegistryClient` (success, retryable failure, terminal failure, conditional-update no-op when a concurrent publish already advanced the version).
-- Integration tests under `swiyu-issuer/tests/` driving full flows with a real Postgres pool (via `sqlx::test`) and a stubbed Status Registry:
+- Integration tests under `api/tests/` driving full flows with a real Postgres pool (via `sqlx::test`) and a stubbed Status Registry:
   - Issuance happy-path: inserts an `issued_credentials` row with the expected `(status_list_id, status_list_index)`, increments `allocated_count`, bumps `committed_version`, transitions the offer to `Issued`.
   - Concurrent issuance race: two simultaneous issuances on the same list allocate adjacent indices without overlap.
   - Capacity overflow: filling a list provisions a second `status_lists` row and re-points `issuers.current_status_list_id`.

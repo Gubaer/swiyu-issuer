@@ -58,23 +58,23 @@ Choices worth flagging:
 
 ## Module layout
 
-`swiyu-issuer/src/persistence/api_tokens.rs`:
+`api/src/persistence/api_tokens.rs`:
 
 - `insert(conn, token: &ApiToken)` — write a freshly minted row.
 - `find_valid_by_hash(conn, token_hash)` — returns the matching `ApiToken` if and only if the row is unrevoked and not expired at the supplied `now`. `None` collapses any other failure mode into "no such valid token".
 - `mark_used(conn, id, now)` — bumps `last_used_at`.
 
-`swiyu-issuer/src/domain/api_token.rs`:
+`api/src/domain/api_token.rs`:
 
 - `ApiToken` — the aggregate (id, tenant_id, name, token_hash, created_at, expires_at, revoked_at, last_used_at).
 - `ApiTokenSecret` — the bare-string newtype, returned exactly once from `mint(...)` and never reconstructable from the database.
 - `ApiTokenHash` — the stored-side newtype wrapping the SHA-256 hex digest, with `from_secret(...)` and `from_stored(...)` constructors.
 
-`swiyu-issuer/src/api_management/auth.rs`:
+`api/src/api_management/auth.rs`:
 
 - The existing `TenantContext` extractor body is replaced. It reads `Authorization: Bearer …`, strips the `tok_` prefix, hashes, looks up via `api_tokens::find_valid_by_hash`, bumps `last_used_at`, and returns `TenantContext { tenant_id }`. On any failure it returns `ApiError::Unauthorised` (401).
 
-`swiyu-issuer/src/bin/swiyu-issuer-mgmtapi.rs`:
+`api/src/bin/swiyu-issuer-mgmtapi.rs`:
 
 - Becomes a small dispatcher. With no positional argument, runs the server (current behaviour). With `mint-token`, runs the CLI flow.
 

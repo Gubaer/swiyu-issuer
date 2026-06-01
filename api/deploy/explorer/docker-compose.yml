@@ -3,8 +3,8 @@
 # Goal: no clone, no cargo, no build — just `docker compose up -d`.
 #
 # GENERATED FILE. Do not edit by hand. The source of truth is
-# swiyu-issuer/docker-compose.yml; regenerate with
-#   python3 swiyu-issuer/deploy/explorer/gen-compose.py
+# api/docker-compose.yml; regenerate with
+#   python3 api/deploy/explorer/gen-compose.py
 # CI runs `gen-compose.py --check` to block drift.
 #
 # IMAGE_TAG defaults to the floating `swiyu-beta`. Pin to a release by

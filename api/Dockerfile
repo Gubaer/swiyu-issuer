@@ -2,19 +2,21 @@
 # `swiyu-issuer-oidcapi`, and `swiyu-issuer-cli`) as release images,
 # using cargo-chef to keep dependency compilation in a cached layer.
 #
-# The build context must be the *workspace root* (one directory up
-# from this file) because swiyu-issuer depends on the sibling crates
-# swiyu-core and swiyu-registries via `path = "../..."`. Compose
-# wires this up with `context: ..` and `dockerfile: swiyu-issuer/Dockerfile`.
+# The build context must be the *repo root* (one directory up from this
+# file) because that is where the workspace Cargo.toml / Cargo.lock and the
+# `.cargo/config.toml` live. The shared crates swiyu-core and swiyu-registries
+# are git dependencies (see api/Cargo.toml) that cargo fetches over HTTPS at
+# build time, so the build needs network access but no SSH credentials.
+# Compose wires this up with `context: ..` and `dockerfile: api/Dockerfile`.
 #
 # The Dockerfile produces three runtime images via separate `runtime-*`
-# stages, selected with Docker's `--target` flag:
+# stages, selected with Docker's `--target` flag (run from the repo root):
 #
-#   docker build -f swiyu-issuer/Dockerfile --target runtime-mgmtapi \
+#   docker build -f api/Dockerfile --target runtime-mgmtapi \
 #       -t swiyu-issuer-mgmtapi:dev .
-#   docker build -f swiyu-issuer/Dockerfile --target runtime-oidcapi \
+#   docker build -f api/Dockerfile --target runtime-oidcapi \
 #       -t swiyu-issuer-oidcapi:dev .
-#   docker build -f swiyu-issuer/Dockerfile --target runtime-cli \
+#   docker build -f api/Dockerfile --target runtime-cli \
 #       -t swiyu-issuer-cli:dev .
 #
 # The compose file uses the same flag per service.

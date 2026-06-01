@@ -7,7 +7,7 @@ Registry; you only need Docker, an [ePortal](https://eportal.admin.ch/) account,
 files in this directory.
 
 For the contributor flow (building from source), see
-`swiyu-issuer/.env.example` and `swiyu-issuer/docker-compose.yml` in
+`api/.env.example` and `api/docker-compose.yml` in
 the repo instead.
 
 ## Not for production use
@@ -61,8 +61,8 @@ proxy terminating TLS, and scoped auth tokens.
 Grab the two files into an empty directory:
 
 ```sh
-curl -O https://raw.githubusercontent.com/Gubaer/swiyu-rs/master/swiyu-issuer/deploy/explorer/docker-compose.yml
-curl -O https://raw.githubusercontent.com/Gubaer/swiyu-rs/master/swiyu-issuer/deploy/explorer/.env.example
+curl -O https://raw.githubusercontent.com/Gubaer/swiyu-issuer/master/api/deploy/explorer/docker-compose.yml
+curl -O https://raw.githubusercontent.com/Gubaer/swiyu-issuer/master/api/deploy/explorer/.env.example
 ```
 
 By default the compose file pulls the floating `:swiyu-beta` tag. To

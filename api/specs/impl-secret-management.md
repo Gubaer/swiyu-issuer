@@ -13,7 +13,7 @@ The fundamental rule from the aspect spec applies: a symmetric key never leaves 
 Trait, supporting types, and backend implementations live together under one module in the domain layer of the `swiyu-issuer` crate:
 
 ```
-swiyu-issuer/src/domain/secret_encryption_engine/
+api/src/domain/secret_encryption_engine/
     mod.rs       — trait, Ciphertext, errors, re-exports
     envelope.rs  — encode/decode of the self-describing ciphertext envelope
     any.rs       — AnySecretEncryptionEngine (runtime dispatch enum)
@@ -224,7 +224,7 @@ Derivation is performed on every encrypt and decrypt call. A small in-memory `Ha
 
 The engine does **not** enumerate `key_name`s at startup. With tenant-scoped families (see *Tenant-scoped key naming*) the set of concrete `key_name`s grows as tenants are created, so a static list is not the right model. Misconfiguration — a missing tenant key in Vault — surfaces at first encrypt or decrypt as `KeyNotFound`, logged loudly. The set of families that the application uses is captured in the naming helper (code), not in environment configuration.
 
-**Local Vault provisioning (docker-compose).** The `vault-init` sidecar in `swiyu-issuer/docker-compose.yml` runs once after the dev Vault container becomes healthy. It enables the Transit secrets engine and applies the policy attached to the runtime token. It does **not** pre-create per-tenant keys (see *Tenant-key provisioning* below); test fixtures and the dev tenant bootstrap issue the corresponding `vault write -f {transit}/keys/<name> type=aes256-gcm96` calls themselves.
+**Local Vault provisioning (docker-compose).** The `vault-init` sidecar in `api/docker-compose.yml` runs once after the dev Vault container becomes healthy. It enables the Transit secrets engine and applies the policy attached to the runtime token. It does **not** pre-create per-tenant keys (see *Tenant-key provisioning* below); test fixtures and the dev tenant bootstrap issue the corresponding `vault write -f {transit}/keys/<name> type=aes256-gcm96` calls themselves.
 
 **Tenant-key provisioning.** Operators provision a tenant's Vault Transit keys out of band — Terraform (`vault_transit_secret_backend_key`), an Ansible playbook, or a runbook `vault write -f {transit}/keys/<name> type=aes256-gcm96` — before the tenant is admitted. swiyu-issuer never calls `POST /v1/{transit}/keys/*` itself, neither in the tenant-create transaction nor lazily on first encrypt. This is the same onboarding shape used for OAuth2 tenant credentials in `aspect-oauth2.md` / `impl-oauth2.md`: tenant-row state required by the runtime is seeded by an operator (direct SQL or a CLI subcommand) before the first call, and "missing onboarding state" surfaces as a Terminal failure at first use — here, `KeyNotFound`. The Dev backend has no equivalent step (HKDF derives on demand).
 

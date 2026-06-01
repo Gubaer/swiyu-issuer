@@ -1,6 +1,6 @@
 # Credential Management UI
 
-This document specifies the web UI for issuing and managing credentials in the `swiyu-issuer-web` admin SPA: the navigation, the credential-offer creation flow, the management of offers and issued credentials, and the BFF endpoints these screens need. It builds on the management API modelled in `swiyu-issuer` — see the credential-management aspect (`../../swiyu-issuer/specs/aspect-credential-management.md`), the credential-type aspect (`../../swiyu-issuer/specs/aspect-credential-type.md`), and the management-API implementation (`../../swiyu-issuer/specs/impl_api_management.md`). The SPA and BFF architecture (SPA talks only to the BFF; the BFF is a thin, auth-injecting proxy to the management API) is the same one already used for the issuer screens.
+This document specifies the web UI for issuing and managing credentials in the `swiyu-issuer-web` admin SPA: the navigation, the credential-offer creation flow, the management of offers and issued credentials, and the BFF endpoints these screens need. It builds on the management API modelled in `swiyu-issuer` — see the credential-management aspect (`../../api/specs/aspect-credential-management.md`), the credential-type aspect (`../../api/specs/aspect-credential-type.md`), and the management-API implementation (`../../api/specs/impl_api_management.md`). The SPA and BFF architecture (SPA talks only to the BFF; the BFF is a thin, auth-injecting proxy to the management API) is the same one already used for the issuer screens.
 
 Status: preliminary; living document.
 

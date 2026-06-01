@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """Generate the explorer docker-compose.yml from the dev docker-compose.yml.
 
-From swiyu-issuer/deploy/explorer/:
+From api/deploy/explorer/:
 
   uv run gen-compose.py            # write
   uv run gen-compose.py --check    # CI guard
 
-The dev compose at swiyu-issuer/docker-compose.yml is the single source of
+The dev compose at api/docker-compose.yml is the single source of
 truth; the explorer copy is regenerated whenever the dev compose changes.
 Dependencies (ruamel.yaml) are pinned via this directory's pyproject.toml
 and uv.lock — `uv run` provisions the venv on first use.
@@ -22,7 +22,7 @@ try:
     from ruamel.yaml import YAML
 except ImportError:
     sys.stderr.write(
-        "error: ruamel.yaml is required. From swiyu-issuer/deploy/explorer/:\n"
+        "error: ruamel.yaml is required. From api/deploy/explorer/:\n"
         "  uv sync && uv run gen-compose.py\n"
     )
     sys.exit(2)
@@ -47,8 +47,8 @@ EXPLORER_HEADER = """\
 # Goal: no clone, no cargo, no build — just `docker compose up -d`.
 #
 # GENERATED FILE. Do not edit by hand. The source of truth is
-# swiyu-issuer/docker-compose.yml; regenerate with
-#   python3 swiyu-issuer/deploy/explorer/gen-compose.py
+# api/docker-compose.yml; regenerate with
+#   python3 api/deploy/explorer/gen-compose.py
 # CI runs `gen-compose.py --check` to block drift.
 #
 # IMAGE_TAG defaults to the floating `swiyu-beta`. Pin to a release by

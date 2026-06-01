@@ -15,7 +15,7 @@ All decisions are settled in the spec: three-step wizard, full-page routed steps
 
 Three thin pass-throughs in the existing style. The mgmt API already implements the upstream routes; the BFF just forwards.
 
-### 1.1 Upstream client — `swiyu-issuer-web/bff/src/upstream/mgmt_api.rs`
+### 1.1 Upstream client — `web/bff/src/upstream/mgmt_api.rs`
 
 Add three methods next to `list_credential_offers` / `get_credential_offer`, following the same shape (build URL from `self.base_url`, send via `self.http`, funnel through `read_json`):
 
@@ -25,7 +25,7 @@ Add three methods next to `list_credential_offers` / `get_credential_offer`, fol
 
 Note on the schema endpoint: upstream returns `application/schema+json`. `read_json` deserializes to `serde_json::Value` regardless of content-type, so a JSON Schema body comes through fine. The BFF will re-serialize it as `application/json` — acceptable, since Monaco only needs the parsed schema object, not the exact media type.
 
-### 1.2 Route handlers — `swiyu-issuer-web/bff/src/routes/credential_offers.rs` (+ a new `credential_types.rs`)
+### 1.2 Route handlers — `web/bff/src/routes/credential_offers.rs` (+ a new `credential_types.rs`)
 
 In `credential_offers.rs`, add:
 
@@ -42,7 +42,7 @@ pub async fn create_credential_offer(
 
 The create response carries the one-time pre-auth code and deeplink — forward it **verbatim**, do not strip anything (contrast with `list_credential_offers`, which calls `strip_claims_from_items`).
 
-New file `swiyu-issuer-web/bff/src/routes/credential_types.rs` for the two credential-type handlers (keeps the offers file focused; matches the one-file-per-resource layout of `issuers.rs` / `me.rs`):
+New file `web/bff/src/routes/credential_types.rs` for the two credential-type handlers (keeps the offers file focused; matches the one-file-per-resource layout of `issuers.rs` / `me.rs`):
 
 ```rust
 pub async fn list_credential_types(
@@ -62,9 +62,9 @@ pub async fn get_credential_type_schema(
 }
 ```
 
-Declare `mod credential_types;` in `swiyu-issuer-web/bff/src/routes/mod.rs`.
+Declare `mod credential_types;` in `web/bff/src/routes/mod.rs`.
 
-### 1.3 Router registration — `swiyu-issuer-web/bff/src/routes/mod.rs`
+### 1.3 Router registration — `web/bff/src/routes/mod.rs`
 
 Extend the existing offers route with `.post(...)` and add the two type routes:
 
@@ -104,13 +104,13 @@ The riskiest piece on Angular 21 + the esbuild `@angular/build:application` buil
 
 ### 2.1 Dependency
 
-`monaco-editor` added to `swiyu-issuer-web/spa/package.json` (resolved to 0.55.1).
+`monaco-editor` added to `web/spa/package.json` (resolved to 0.55.1).
 
 ### 2.2 Worker wiring — ESM `getWorker` (the approach the spike landed on)
 
 The spike resolved this. The AMD/assets approach originally planned here does **not** fit monaco 0.55: its `min/vs` distribution moved workers to content-hashed bundles and dropped the classic `base/worker/workerMain.js`, so the old `getWorkerUrl` → `workerMain.js` proxy is dead. monaco 0.55 instead ships canonical ESM worker entry points and supports `MonacoEnvironment.getWorker`, which the esbuild `@angular/build:application` builder bundles natively. So we import the ESM build and let esbuild bundle the workers — no asset copying, no AMD loader.
 
-What was implemented (all under `swiyu-issuer-web/spa/src/app/shared/json-editor/`):
+What was implemented (all under `web/spa/src/app/shared/json-editor/`):
 
 - Two one-line worker shims that esbuild turns into separate worker bundles:
   - `editor.worker.ts` → `import 'monaco-editor/esm/vs/editor/editor.worker.js';`
@@ -132,7 +132,7 @@ Two builder/typing wrinkles the spike fixed:
 - **Codicon font**: Monaco's CSS pulls a `.ttf`. The builder errors with "No loader is configured for .ttf". Fixed by adding `"loader": { ".ttf": "file" }` to the build `options` in `angular.json`.
 - **`jsonDefaults` typing**: in 0.55 the runtime module exports `{ getWorker, jsonDefaults }`, but its per-module `.d.ts` is `export {}` (types only live in the full barrel `.d.ts`). A small local ambient declaration `monaco-json.d.ts` types just the `jsonDefaults.setDiagnosticsOptions` slice we use. (The old `monaco.languages.json.jsonDefaults` accessor is deprecated in 0.55.)
 
-### 2.3 `JsonEditor` component — `swiyu-issuer-web/spa/src/app/shared/json-editor/json-editor.ts`
+### 2.3 `JsonEditor` component — `web/spa/src/app/shared/json-editor/json-editor.ts`
 
 Implemented as a thin standalone wrapper:
 
@@ -152,14 +152,14 @@ Runtime gate (operator, needs a browser): a temporary spike host at route `spike
 
 ## Stage 3 — Create-offer flow and result screen
 
-Built once Stages 1 and 2 are green. New feature files under `swiyu-issuer-web/spa/src/app/features/credential-offers/`.
+Built once Stages 1 and 2 are green. New feature files under `web/spa/src/app/features/credential-offers/`.
 
 ### 3.1 Credential-types read service + store
 
 - `credential-types-service.ts`: `HttpClient` calls to `/api/issuers/{issuerId}/credential-types` (list) and `/api/credential-types/{typeId}/schema` (schema). Define response types: `CredentialTypeSummary` (from the assignment list) and the schema as an opaque JSON object.
 - `credential-types-store.ts`: signal-based, mirrors `credential-offers-store.ts`. Holds the per-issuer type list and the currently-fetched schema. Apply the same stale-response guard pattern (tag in-flight requests with the intended issuer/type id and drop mismatched responses).
 
-### 3.2 Skeleton generator — `swiyu-issuer-web/spa/src/app/features/credential-offers/claim-skeleton.ts`
+### 3.2 Skeleton generator — `web/spa/src/app/features/credential-offers/claim-skeleton.ts`
 
 A pure function `buildClaimSkeleton(schema): unknown`. Best-effort:
 
@@ -178,7 +178,7 @@ Because the result is one-time, do **not** reuse the existing operation-task pol
 
 ### 3.4 Wizard component(s) + routing
 
-Full-page routed steps. Add to `swiyu-issuer-web/spa/src/app/app.routes.ts`:
+Full-page routed steps. Add to `web/spa/src/app/app.routes.ts`:
 
 ```ts
 { path: 'credential-offers/new', loadComponent: () => import('./features/credential-offers/credential-offer-create').then(m => m.CredentialOfferCreate) }
@@ -192,7 +192,7 @@ Full-page routed steps. Add to `swiyu-issuer-web/spa/src/app/app.routes.ts`:
 
 Mirror `issuer-create.ts` for component shape, form handling, and i18n usage.
 
-### 3.5 `QrCode` component — `swiyu-issuer-web/spa/src/app/shared/qr-code/qr-code.ts`
+### 3.5 `QrCode` component — `web/spa/src/app/shared/qr-code/qr-code.ts`
 
 Add `qrcode` to `package.json`. Thin standalone component: input `value` (string), renders an SVG via `QRCode.toString(value, { type: 'svg' })` bound into the template (e.g. `[innerHTML]` with a sanitized SVG, or an `<img>` from a data-URL). No outputs.
 
@@ -202,11 +202,11 @@ Terminal page: the structured offer attributes (`id`, `expires_at`), the `pre_au
 
 ### 3.7 Entry point
 
-Add a "New offer" button to the credential-offers list header in `swiyu-issuer-web/spa/src/app/features/credential-offers/credential-offers-list.html` (alongside the refresh action) that routes to `/credential-offers/new`, optionally carrying the currently-selected `issuerId` as a query param to pre-select step 1.
+Add a "New offer" button to the credential-offers list header in `web/spa/src/app/features/credential-offers/credential-offers-list.html` (alongside the refresh action) that routes to `/credential-offers/new`, optionally carrying the currently-selected `issuerId` as a query param to pre-select step 1.
 
 ### 3.8 i18n
 
-Add a `credential_offer.create.*` namespace to both `swiyu-issuer-web/spa/public/i18n/en.json` and `de.json`: step titles, field labels/placeholders, the "shown once" warning, copy-button labels, success/error messages. Every user-facing string goes through Transloco.
+Add a `credential_offer.create.*` namespace to both `web/spa/public/i18n/en.json` and `de.json`: step titles, field labels/placeholders, the "shown once" warning, copy-button labels, success/error messages. Every user-facing string goes through Transloco.
 
 ### 3.9 Tests
 

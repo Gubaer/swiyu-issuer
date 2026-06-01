@@ -111,7 +111,7 @@ for stage in "${STAGES[@]}"; do
 
     echo "==> Building ${image_name} (target ${target}, platforms ${PLATFORMS})"
     docker buildx build \
-        -f swiyu-issuer/Dockerfile \
+        -f api/Dockerfile \
         --target "${target}" \
         --platform "${PLATFORMS}" \
         "${TAGS[@]}" \

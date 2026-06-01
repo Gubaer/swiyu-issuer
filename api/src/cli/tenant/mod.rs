@@ -503,7 +503,7 @@ pub async fn seed_dev_credential_type_and_assignments(
 // Bundled artefacts for the dev-seeded dummy credential type. Each
 // of the three blob columns the row carries (`claim_schema`,
 // `display`, `claims`) has its own file under
-// `swiyu-issuer/schemas/` so an operator can inspect or copy the
+// `api/schemas/` so an operator can inspect or copy the
 // contracts without reading Rust. The same files are consumed by
 // the in-crate `test_support` fixture — keeps the seed shape and
 // the test-time fixtures in lock-step.

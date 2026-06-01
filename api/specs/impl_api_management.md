@@ -10,7 +10,7 @@ The v0.1.0 durchstich was "a business application submits a request to create a 
 
 ## Module layout
 
-`swiyu-issuer/src/api_management/`:
+`api/src/api_management/`:
 
 - `mod.rs` — `router(state) -> axum::Router`; re-exports.
 - `state.rs` — `AppState` (pool, clock, config), cheaply cloneable.
@@ -20,7 +20,7 @@ The v0.1.0 durchstich was "a business application submits a request to create a 
 - `credential_offers.rs` — handlers for the credential-offer endpoints (create, fetch, cancel, list, status).
 - `issued_credentials.rs` — lifecycle handlers for issued credentials (suspend, unsuspend, revoke). Added by the credential-management slice; see [`impl-credential-management.md`](impl-credential-management.md).
 
-`swiyu-issuer/src/bin/swiyu-issuer-mgmtapi.rs` stays thin: load config → connect pool → run migrations → build `Router` → bind and serve with graceful shutdown.
+`api/src/bin/swiyu-issuer-mgmtapi.rs` stays thin: load config → connect pool → run migrations → build `Router` → bind and serve with graceful shutdown.
 
 ## Public surface
 
@@ -277,7 +277,7 @@ No config file at v0.1.0.
 
 ## Cargo dependencies
 
-Added to `swiyu-issuer/Cargo.toml`:
+Added to `api/Cargo.toml`:
 
 ```toml
 axum = "0.8"
@@ -289,7 +289,7 @@ jsonschema = "0.30"
 
 `jsonschema` is used for claims validation (JSON Schema 2020-12). `axum` is the HTTP framework in use across both binaries.
 
-`utoipa` (OpenAPI generation) deliberately absent. The hand-written [`swiyu-issuer/openapi-mgmt.yml`](../openapi-mgmt.yml) is the contract for now; generation can be retrofitted later if drift between the spec and the handlers becomes a real problem.
+`utoipa` (OpenAPI generation) deliberately absent. The hand-written [`api/openapi-mgmt.yml`](../openapi-mgmt.yml) is the contract for now; generation can be retrofitted later if drift between the spec and the handlers becomes a real problem.
 
 ## Conventions established
 
@@ -302,7 +302,7 @@ jsonschema = "0.30"
 ## Tests
 
 - Unit tests inside the handler module exercising request/response shapes against an in-process router and a real Postgres pool.
-- Integration tests under `swiyu-issuer/tests/` cover each endpoint end-to-end:
+- Integration tests under `api/tests/` cover each endpoint end-to-end:
 - Create: offer is persisted, the bare `pre_auth_code` is returned in the body and stored on the row until the first terminal-state transition.
 - Fetch: returns the offer; reports `expired` for a stored `pending` row past `expires_at`.
 - Cancel (v0.1.1): idempotent on already-cancelled, 409 on `issued`, succeeds on a stored-`pending` row past expiry.
@@ -323,7 +323,7 @@ Steps 1–3 may land together or in separate commits. Step 4 must come last.
 ## What is deliberately not in v0.1.1
 
 - API-token authentication. `TenantContext` is still a stub reading from env.
-- OpenAPI generation (`utoipa` or equivalent). The hand-written `swiyu-issuer/openapi-mgmt.yml` is the contract for now.
+- OpenAPI generation (`utoipa` or equivalent). The hand-written `api/openapi-mgmt.yml` is the contract for now.
 - OIDC-side endpoints (`/.well-known/openid-credential-issuer`, token, credential). Those belong to the `swiyu-issuer-oidcapi` binary and ship in a separate slice.
 - Rate limiting, CORS policy, cross-service request-id propagation. Wait until there is a real client.
 - Filtering offers by `vct`, by date range, or by free-text claim search. Only `state` filtering at v0.1.1.
