@@ -45,7 +45,7 @@ The smokes do not call the registries directly; they observe the management API 
 
 ```
 # In one terminal:
-cd swiyu-issuer
+cd api
 docker compose up -d
 
 # In another terminal, with the workspace .env loaded (e.g. via direnv):

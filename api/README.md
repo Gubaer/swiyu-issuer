@@ -8,7 +8,7 @@ Identifier Registry.
 
 ![swiyu-issuer overview](./swiyu-issuer.svg)
 
-Part of the [`swiyu-rs`](../README.md) workspace.
+The `api/` crate of the [`swiyu-issuer`](../README.md) repository.
 
 ## Status
 
@@ -16,8 +16,8 @@ Work in progress. The service runs end-to-end against the SWIYU integration
 environment, but APIs and on-disk state are not yet stable.
 
 `swiyu-issuer` currently issues credentials against DIDs registered with
-`did:tdw` 0.3. `did:webvh` 1.0 code paths exist in the workspace but are
-unverified — see the [workspace README](../README.md).
+`did:tdw` 0.3. `did:webvh` 1.0 code paths exist in the shared `swiyu-rs` crates
+but are unverified — see the [repository README](../README.md).
 
 ## Binaries
 
@@ -79,7 +79,7 @@ bundle is **not hardened** — see the warning at the top of its README.
 ### Run the dev stack
 
 ```sh
-cd swiyu-issuer
+cd api
 
 # Copy .env.example to .env and fill in your SWIYU Business Partner values.
 cp .env.example .env

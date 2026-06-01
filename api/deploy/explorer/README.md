@@ -7,7 +7,8 @@ Registry; you only need Docker, an [ePortal](https://eportal.admin.ch/) account,
 files in this directory.
 
 For the contributor flow (building from source), see
-`api/.env.example` and `api/docker-compose.yml` in
+[`api/.env.example`](../../.env.example) and
+[`api/docker-compose.yml`](../../docker-compose.yml) in
 the repo instead.
 
 ## Not for production use
