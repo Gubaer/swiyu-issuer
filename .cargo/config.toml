@@ -1,0 +1,6 @@
+# Use the system git CLI (not libgit2) to fetch git dependencies.
+# Required because the shared crates `swiyu-core` / `swiyu-registries` are
+# consumed as SSH git deps from Gubaer/swiyu-rs (Option B); libgit2's ssh-agent
+# auth does not negotiate a username reliably, whereas the git CLI does.
+[net]
+git-fetch-with-cli = true

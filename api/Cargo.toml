@@ -15,8 +15,8 @@ license = "MIT"
 test-support = ["dep:wiremock"]
 
 [dependencies]
-swiyu-core = { path = "../swiyu-core" }
-swiyu-registries = { path = "../swiyu-registries", features = ["status"] }
+swiyu-core = { git = "ssh://git@github.com/Gubaer/swiyu-rs.git", tag = "shared-crates-2026-06-01" }
+swiyu-registries = { git = "ssh://git@github.com/Gubaer/swiyu-rs.git", tag = "shared-crates-2026-06-01", features = ["status"] }
 aes-gcm = "0.10"
 axum = "0.8"
 base64 = "0.22"
