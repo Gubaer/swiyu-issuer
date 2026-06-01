@@ -80,14 +80,15 @@ fn init_tracing() {
 }
 
 struct Config {
-    /// Management API base, e.g. `http://localhost:8080`. Also the
-    /// public-facing URL the OIDC binary advertises in its metadata,
-    /// so the wallet proof's `aud` is built from this value.
+    /// Management API base, e.g. `http://localhost:8080`.
     mgmt_url: String,
-    /// URL the OIDC binary actually listens on, e.g.
-    /// `http://localhost:8081`. In production this collapses to the
-    /// same host as `mgmt_url` behind a reverse proxy; in dev they
-    /// differ because compose maps each binary to its own host port.
+    /// Wallet-facing OIDC base, e.g. `http://localhost:8081`. This is the
+    /// credential-issuer identifier the OIDC binary advertises in
+    /// `credential_issuer` + metadata (compose sets it via
+    /// `ISSUER_OIDC_HTTP_URL`), so the wallet proof's `aud` is built from
+    /// this value. In production this collapses to the same host as
+    /// `mgmt_url` behind a reverse proxy; in dev they differ because
+    /// compose maps each binary to its own host port.
     oidc_url: String,
     database_url: String,
     task_timeout: Duration,
@@ -378,7 +379,7 @@ async fn run(cfg: &Config) -> Result<(), SmokeError> {
     let wallet_signing_key = SigningKey::generate(&mut OsRng);
     let proof_jwt = build_wallet_proof(
         &wallet_signing_key,
-        &cfg.mgmt_url,
+        &cfg.oidc_url,
         &create.issuer_id,
         &token_resp.c_nonce,
     )

@@ -376,7 +376,7 @@ async fn run(cfg: &Config) -> Result<(), SmokeError> {
     let wallet_signing_key = SigningKey::generate(&mut OsRng);
     let proof_jwt = build_wallet_proof(
         &wallet_signing_key,
-        &cfg.mgmt_url,
+        &cfg.oidc_url,
         &create.issuer_id,
         &token_resp.c_nonce,
     )
