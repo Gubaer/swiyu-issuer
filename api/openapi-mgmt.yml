@@ -13,17 +13,23 @@ info:
     the wallet-facing endpoints live in a separate binary and are not
     described here.
 
-    Authentication: every request must carry
-    `Authorization: Bearer tok_<base58>`. Tokens are tenant-scoped
-    and minted via the `swiyu-issuer-cli tenant api-token mint` CLI; alpha/beta
-    deployments ship with a documented dev token for the seeded
-    tenant.
+    Authentication: every request must carry a bearer JWT issued by the
+    deployment's Keycloak realm (OAuth2 client-credentials grant). The
+    token is EdDSA-signed; the management API validates its signature
+    against the realm JWKS, its `iss` and `aud`, and reads the
+    `tenant_id` claim (the tenant the request is scoped to) and the
+    `principal_type` claim. Authorization — which operations a principal
+    may perform — is enforced inside the management API against its own
+    data, not via token scopes.
   license:
     name: MIT
 
 servers:
   - url: http://localhost:8080
     description: Local development (docker compose up + cargo run)
+
+security:
+  - OAuth2: []
 
 paths:
   /healthz:
@@ -1052,6 +1058,18 @@ paths:
           $ref: '#/components/responses/NotFound'
 
 components:
+  securitySchemes:
+    OAuth2:
+      type: oauth2
+      description: |
+        OAuth2 bearer JWT from the deployment's Keycloak realm. A business
+        application obtains a token with the client-credentials grant; the
+        management API validates it as a resource server (signature, `iss`,
+        `aud`) and derives the tenant from the `tenant_id` claim.
+      flows:
+        clientCredentials:
+          tokenUrl: http://localhost:8083/realms/swiyu-issuer/protocol/openid-connect/token
+          scopes: {}
   parameters:
     IssuerId:
       name: issuer_id
