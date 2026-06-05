@@ -1,0 +1,125 @@
+{
+  "realm": "swiyu-issuer",
+  "displayName": "swiyu-issuer (dev/explore)",
+  "enabled": true,
+  "sslRequired": "none",
+  "registrationAllowed": false,
+  "loginWithEmailAllowed": false,
+  "attributes": {
+    "defaultSignatureAlgorithm": "EdDSA"
+  },
+  "components": {
+    "org.keycloak.keys.KeyProvider": [
+      {
+        "name": "eddsa-generated",
+        "providerId": "eddsa-generated",
+        "subComponents": {},
+        "config": {
+          "priority": ["200"],
+          "enabled": ["true"],
+          "active": ["true"],
+          "eddsaEllipticCurveKey": ["Ed25519"]
+        }
+      }
+    ]
+  },
+  "clientScopes": [
+    {
+      "name": "mgmtapi-audience",
+      "description": "Adds swiyu-issuer-mgmtapi to the access-token audience so the resource server accepts the token.",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "false",
+        "display.on.consent.screen": "false"
+      },
+      "protocolMappers": [
+        {
+          "name": "mgmtapi-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.client.audience": "swiyu-issuer-mgmtapi",
+            "access.token.claim": "true",
+            "id.token.claim": "false",
+            "introspection.token.claim": "true"
+          }
+        }
+      ]
+    }
+  ],
+  "clients": [
+    {
+      "clientId": "swiyu-issuer-mgmtapi",
+      "name": "swiyu-issuer Management API (resource server)",
+      "description": "Bearer-only client representing the protected mgmtapi. Holds no flows and obtains no tokens; it only exists to be the token audience (and, later, the token-exchange target).",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "bearerOnly": true,
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false
+    },
+    {
+      "clientId": "provisioner",
+      "name": "swiyu-issuer provisioning client",
+      "description": "Least-privilege service account the CLI uses to upsert the dev-ba tenant_id mapper via the Admin API. Granted only realm-management:manage-clients (see the service-account user below).",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "provisioner-secret",
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": true
+    },
+    {
+      "clientId": "dev-ba",
+      "name": "Development business application",
+      "description": "Sample business application. Uses the client-credentials grant to call swiyu-issuer-mgmtapi on behalf of the dev tenant. The tenant_id claim is NOT here; it is added at bootstrap by the provisioner via the Admin API.",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "dev-ba-secret",
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": true,
+      "attributes": {
+        "access.token.signed.response.alg": "EdDSA"
+      },
+      "defaultClientScopes": ["basic", "roles", "mgmtapi-audience"],
+      "optionalClientScopes": [],
+      "protocolMappers": [
+        {
+          "name": "principal_type",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-hardcoded-claim-mapper",
+          "consentRequired": false,
+          "config": {
+            "claim.name": "principal_type",
+            "claim.value": "tenant",
+            "jsonType.label": "String",
+            "access.token.claim": "true",
+            "id.token.claim": "false",
+            "introspection.token.claim": "true"
+          }
+        }
+      ]
+    }
+  ],
+  "users": [
+    {
+      "username": "service-account-provisioner",
+      "enabled": true,
+      "serviceAccountClientId": "provisioner",
+      "clientRoles": {
+        "realm-management": ["manage-clients"]
+      }
+    }
+  ]
+}
