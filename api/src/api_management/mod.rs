@@ -8,9 +8,11 @@ mod issued_credentials;
 mod issuers;
 mod operation_tasks;
 mod state;
+mod token_validator;
 
 pub use error::ApiError;
 pub use state::{AppState, Config};
+pub use token_validator::{TokenError, TokenValidator};
 
 use crate::domain::{CredentialTypeId, IssuerId};
 

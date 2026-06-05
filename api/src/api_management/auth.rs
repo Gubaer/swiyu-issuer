@@ -11,8 +11,13 @@ use crate::persistence;
 
 use super::AppState;
 use super::error::ApiError;
+use super::token_validator::TokenError;
 
 const BEARER_PREFIX: &str = "Bearer ";
+/// Prefix carried by legacy opaque API tokens (`tok_<base58>`). It is the
+/// discriminator between the legacy path and a Keycloak JWT: a credential with
+/// this prefix is opaque, anything else is treated as a JWT.
+const OPAQUE_TOKEN_PREFIX: &str = "tok_";
 
 pub struct TenantContext {
     pub tenant_id: TenantId,
@@ -25,44 +30,80 @@ impl FromRequestParts<AppState> for TenantContext {
         parts: &mut Parts,
         state: &AppState,
     ) -> Result<Self, Self::Rejection> {
-        // Every step that can fail collapses to ApiError::Unauthorised
-        // with a generic body, so the client cannot distinguish "no
-        // header" from "wrong scheme" from "expired token" from
-        // "revoked token". The tracing::debug! lines preserve the
-        // diagnostic detail server-side.
-        let secret = extract_bearer(parts)?;
-        let hash = secret.hash();
-
-        let mut conn = state.pool.acquire().await.map_err(|err| {
-            tracing::debug!(error = %err, "auth: failed to acquire DB connection");
-            ApiError::Unauthorised
-        })?;
-
-        let token = persistence::api_tokens::find_valid_by_hash(&mut conn, &hash, Utc::now())
-            .await
-            .map_err(|err| {
-                tracing::debug!(error = %err, "auth: token lookup failed");
-                ApiError::Unauthorised
-            })?
-            .ok_or_else(|| {
-                tracing::debug!("auth: no valid token matches the presented hash");
-                ApiError::Unauthorised
-            })?;
-
-        // last_used_at is best-effort: a failure here means the audit
-        // signal is missing, not that the request should be denied.
-        if let Err(err) = persistence::api_tokens::mark_used(&mut conn, &token.id, Utc::now()).await
-        {
-            tracing::warn!(error = %err, token_id = %token.id, "auth: failed to bump last_used_at");
+        // Opaque `tok_…` credentials take the legacy path; anything else is
+        // treated as a Keycloak JWT.
+        let credential = extract_bearer(parts)?;
+        if credential.starts_with(OPAQUE_TOKEN_PREFIX) {
+            // Every failure collapses to a generic 401 so the client cannot
+            // distinguish "no header" from "wrong scheme" from "expired
+            // token"; the tracing::debug! lines keep the detail server-side.
+            authenticate_opaque(state, credential).await
+        } else {
+            // As on the opaque path, a bad token is a generic 401; the one
+            // exception is a transient JWKS outage, which surfaces as 503
+            // (not the caller's fault).
+            authenticate_jwt(state, credential).await
         }
-
-        Ok(TenantContext {
-            tenant_id: token.tenant_id,
-        })
     }
 }
 
-fn extract_bearer(parts: &Parts) -> Result<ApiTokenSecret, ApiError> {
+/// Legacy path: SHA-256 the opaque token and look it up in `api_tokens`.
+async fn authenticate_opaque(
+    state: &AppState,
+    credential: &str,
+) -> Result<TenantContext, ApiError> {
+    let secret = ApiTokenSecret::from_wire(credential).map_err(|err| {
+        tracing::debug!(error = %err, "auth: malformed opaque token");
+        ApiError::Unauthorised
+    })?;
+    let hash = secret.hash();
+
+    let mut conn = state.pool.acquire().await.map_err(|err| {
+        tracing::debug!(error = %err, "auth: failed to acquire DB connection");
+        ApiError::Unauthorised
+    })?;
+
+    let token = persistence::api_tokens::find_valid_by_hash(&mut conn, &hash, Utc::now())
+        .await
+        .map_err(|err| {
+            tracing::debug!(error = %err, "auth: token lookup failed");
+            ApiError::Unauthorised
+        })?
+        .ok_or_else(|| {
+            tracing::debug!("auth: no valid token matches the presented hash");
+            ApiError::Unauthorised
+        })?;
+
+    // last_used_at is best-effort: a failure here means the audit signal is
+    // missing, not that the request should be denied.
+    if let Err(err) = persistence::api_tokens::mark_used(&mut conn, &token.id, Utc::now()).await {
+        tracing::warn!(error = %err, token_id = %token.id, "auth: failed to bump last_used_at");
+    }
+
+    Ok(TenantContext {
+        tenant_id: token.tenant_id,
+    })
+}
+
+/// OAuth2 path: validate a Keycloak bearer JWT and derive the tenant. When no
+/// validator is configured, the JWT path is disabled and any non-`tok_`
+/// credential is rejected.
+async fn authenticate_jwt(state: &AppState, credential: &str) -> Result<TenantContext, ApiError> {
+    let Some(validator) = state.jwt_validator.as_deref() else {
+        tracing::debug!("auth: JWT presented but OAuth2 validation is not configured");
+        return Err(ApiError::Unauthorised);
+    };
+    match validator.validate_tenant(credential, Utc::now()).await {
+        Ok(tenant_id) => Ok(TenantContext { tenant_id }),
+        Err(TokenError::Invalid) => Err(ApiError::Unauthorised),
+        Err(TokenError::KeysUnavailable) => Err(ApiError::ServiceUnavailable),
+    }
+}
+
+/// Strips the `Bearer ` scheme and returns the credential that follows,
+/// without inspecting or validating it — whether it is an opaque token or a
+/// JWT is for the caller to decide.
+fn extract_bearer(parts: &Parts) -> Result<&str, ApiError> {
     let header = parts.headers.get(AUTHORIZATION).ok_or_else(|| {
         tracing::debug!("auth: missing Authorization header");
         ApiError::Unauthorised
@@ -71,12 +112,8 @@ fn extract_bearer(parts: &Parts) -> Result<ApiTokenSecret, ApiError> {
         tracing::debug!("auth: Authorization header is not valid UTF-8");
         ApiError::Unauthorised
     })?;
-    let token_str = value.strip_prefix(BEARER_PREFIX).ok_or_else(|| {
+    value.strip_prefix(BEARER_PREFIX).ok_or_else(|| {
         tracing::debug!("auth: Authorization header is not a Bearer credential");
-        ApiError::Unauthorised
-    })?;
-    ApiTokenSecret::from_wire(token_str).map_err(|err| {
-        tracing::debug!(error = %err, "auth: malformed bearer token");
         ApiError::Unauthorised
     })
 }
@@ -141,10 +178,16 @@ mod tests {
     }
 
     #[test]
-    fn extract_bearer_accepts_well_formed_token() {
+    fn extract_bearer_returns_opaque_credential_verbatim() {
         let parts = parts_with_header(Some("Bearer tok_DevDevDevDevDev"));
-        let secret = extract_bearer(&parts).unwrap();
-        assert_eq!(secret.bare(), "DevDevDevDevDev");
+        assert_eq!(extract_bearer(&parts).unwrap(), "tok_DevDevDevDevDev");
+    }
+
+    #[test]
+    fn extract_bearer_returns_jwt_credential_verbatim() {
+        // A non-`tok_` credential is returned as-is for the JWT branch.
+        let parts = parts_with_header(Some("Bearer aaa.bbb.ccc"));
+        assert_eq!(extract_bearer(&parts).unwrap(), "aaa.bbb.ccc");
     }
 
     #[test]
@@ -156,24 +199,6 @@ mod tests {
     #[test]
     fn extract_bearer_rejects_basic_scheme() {
         let parts = parts_with_header(Some("Basic dXNlcjpwYXNz"));
-        assert!(extract_bearer(&parts).is_err());
-    }
-
-    #[test]
-    fn extract_bearer_rejects_missing_tok_prefix() {
-        let parts = parts_with_header(Some("Bearer DevDevDevDevDev"));
-        assert!(extract_bearer(&parts).is_err());
-    }
-
-    #[test]
-    fn extract_bearer_rejects_non_base58_body() {
-        let parts = parts_with_header(Some("Bearer tok_Dev0Dev"));
-        assert!(extract_bearer(&parts).is_err());
-    }
-
-    #[test]
-    fn extract_bearer_rejects_empty_body() {
-        let parts = parts_with_header(Some("Bearer tok_"));
         assert!(extract_bearer(&parts).is_err());
     }
 }

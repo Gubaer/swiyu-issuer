@@ -13,6 +13,8 @@ pub enum ApiError {
     NotFound,
     #[error("unauthorised")]
     Unauthorised,
+    #[error("service unavailable")]
+    ServiceUnavailable,
     #[error("forbidden")]
     Forbidden,
     #[error("claims validation failed")]
@@ -45,6 +47,11 @@ impl IntoResponse for ApiError {
                 StatusCode::UNAUTHORIZED,
                 "unauthorised",
                 "authentication required".to_string(),
+            ),
+            ApiError::ServiceUnavailable => (
+                StatusCode::SERVICE_UNAVAILABLE,
+                "service_unavailable",
+                "service temporarily unavailable".to_string(),
             ),
             ApiError::Forbidden => (
                 StatusCode::FORBIDDEN,

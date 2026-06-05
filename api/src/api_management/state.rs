@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use sqlx::PgPool;
 
+use super::token_validator::TokenValidator;
 use crate::state::ValidatorCache;
 
 pub struct Config {
@@ -19,6 +20,10 @@ pub struct AppState {
     pub pool: PgPool,
     pub config: Arc<Config>,
     pub validators: Arc<ValidatorCache>,
+    /// OAuth2 bearer-JWT validator. `None` disables the JWT path, leaving only
+    /// the legacy opaque-token auth — the default when no Keycloak environment
+    /// is configured.
+    pub jwt_validator: Option<Arc<TokenValidator>>,
 }
 
 impl AppState {
@@ -27,6 +32,15 @@ impl AppState {
             pool,
             config: Arc::new(config),
             validators: Arc::new(ValidatorCache::new()),
+            jwt_validator: None,
         }
+    }
+
+    /// Attaches an OAuth2 JWT validator, enabling the resource-server auth
+    /// path. Builder-style so existing callers (tests, the OIDC-less setups)
+    /// keep using [`AppState::new`] unchanged.
+    pub fn with_jwt_validator(mut self, validator: Option<Arc<TokenValidator>>) -> Self {
+        self.jwt_validator = validator;
+        self
     }
 }

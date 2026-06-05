@@ -6,7 +6,7 @@ use std::time::Duration as StdDuration;
 use chrono::Duration;
 use rand_core::OsRng;
 use reqwest::Client;
-use swiyu_issuer::api_management::{AppState, Config, router};
+use swiyu_issuer::api_management::{AppState, Config, TokenValidator, router};
 use swiyu_issuer::config::resolve_oidc_public_url;
 use swiyu_issuer::domain::{
     AnySecretEncryptionEngine, ProviderRegistry, build_secret_encryption_engine_from_env,
@@ -66,7 +66,9 @@ async fn serve() -> Result<(), Box<dyn std::error::Error>> {
     let pool = persistence::connect(&database_url).await?;
     persistence::run_migrations(&pool).await?;
 
-    let state = AppState::new(pool.clone(), Config { issuer_base_url });
+    let jwt_validator = build_jwt_validator()?;
+    let state =
+        AppState::new(pool.clone(), Config { issuer_base_url }).with_jwt_validator(jwt_validator);
     let app = router(state);
 
     let registry_client = IdentifierRegistryClient::new(registry_url)?;
@@ -139,6 +141,37 @@ async fn serve() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     Ok(())
+}
+
+/// Builds the OAuth2 JWT validator from the environment.
+///
+/// Enabled only when both `KEYCLOAK_ISSUER_URL` and `MGMTAPI_AUDIENCE` are set;
+/// the JWKS URL is derived from the issuer unless `KEYCLOAK_JWKS_URL` overrides
+/// it. With neither set the validator is `None` (legacy opaque tokens only).
+/// Setting exactly one is a misconfiguration and fails fast at startup.
+fn build_jwt_validator() -> Result<Option<Arc<TokenValidator>>, Box<dyn std::error::Error>> {
+    match (
+        env::var("KEYCLOAK_ISSUER_URL").ok(),
+        env::var("MGMTAPI_AUDIENCE").ok(),
+    ) {
+        (Some(issuer), Some(audience)) => {
+            let jwks_url = env::var("KEYCLOAK_JWKS_URL")
+                .ok()
+                .unwrap_or_else(|| TokenValidator::jwks_url_for_issuer(&issuer));
+            let http = Client::builder().build()?;
+            tracing::info!(%issuer, %audience, %jwks_url, "OAuth2 JWT validation enabled");
+            Ok(Some(Arc::new(TokenValidator::new(
+                issuer, jwks_url, audience, http,
+            ))))
+        }
+        (None, None) => {
+            tracing::info!(
+                "OAuth2 JWT validation disabled (KEYCLOAK_ISSUER_URL/MGMTAPI_AUDIENCE unset); accepting legacy opaque tokens only"
+            );
+            Ok(None)
+        }
+        _ => Err("KEYCLOAK_ISSUER_URL and MGMTAPI_AUDIENCE must be set together".into()),
+    }
 }
 
 /// Validates `SWIYU_TOKEN_REFRESH_FRACTION` against the safe range
