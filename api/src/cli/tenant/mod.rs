@@ -1,5 +1,3 @@
-pub mod api_token;
-
 use chrono::{Duration, Utc};
 use secrecy::SecretString;
 use sqlx::PgPool;

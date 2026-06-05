@@ -1,5 +1,4 @@
 pub mod access_token;
-pub mod api_token;
 pub mod credential_offer;
 pub mod credential_type;
 pub mod ids;
@@ -16,7 +15,6 @@ pub mod status_list;
 pub mod tenant;
 
 pub use access_token::{AccessToken, AccessTokenHash, AccessTokenSecret};
-pub use api_token::{ApiToken, ApiTokenHash, ApiTokenSecret};
 pub use credential_offer::{CredentialOffer, CredentialOfferState};
 pub use credential_type::{CredentialType, RevocationMode};
 
@@ -28,8 +26,8 @@ pub enum DomainError {
     StateTransitionNotAllowed,
 }
 pub use ids::{
-    ApiTokenId, CredentialOfferId, CredentialTypeId, IssuedCredentialId, IssuerId, StatusListId,
-    TaskId, TenantId,
+    CredentialOfferId, CredentialTypeId, IssuedCredentialId, IssuerId, StatusListId, TaskId,
+    TenantId,
 };
 pub use issued_credential::{INTEGRITY_HASH_LEN, IssuedCredential, IssuedCredentialState};
 pub use issuer::{Issuer, IssuerState, MarkOutcome};

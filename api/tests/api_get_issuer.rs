@@ -9,7 +9,7 @@ use sqlx::PgPool;
 use tower::ServiceExt;
 
 use swiyu_issuer::api_management::router;
-use swiyu_issuer::domain::{ApiTokenSecret, Issuer, IssuerId, TenantId};
+use swiyu_issuer::domain::{Issuer, IssuerId, TenantId};
 
 use swiyu_issuer::test_support::api::tokens::mint_test_token;
 use swiyu_issuer::test_support::api::{authenticated_app_state, build_state};
@@ -172,7 +172,7 @@ async fn rejects_unknown_bearer_token(pool: PgPool) {
     swiyu_issuer::test_support::persistence::issuers::insert(&pool, &issuer).await;
 
     let app = router(build_state(pool));
-    let bogus = ApiTokenSecret::generate();
+    let bogus = swiyu_issuer::test_support::api::tokens::TestToken::bogus();
     let response = app
         .oneshot(get_request(
             &format!("/api/v1/issuers/{}", issuer.id.bare()),

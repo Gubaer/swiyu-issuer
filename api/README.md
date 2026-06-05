@@ -49,8 +49,8 @@ ship in the repo:
 - **OAuth2** — the service holds a refresh token for the tenant's SWIYU
   Business Partner and refreshes access tokens on demand to call the
   Identifier and Status registries.
-- **Multi-tenant** — every row is scoped to a tenant; API tokens are
-  tenant-scoped and minted via `swiyu-issuer-cli tenant api-token mint`.
+- **Multi-tenant** — every row is scoped to a tenant; requests authenticate
+  with a Keycloak-issued JWT whose `tenant_id` claim scopes the request.
 
 The `specs/` directory contains the design notes and topic plans behind these
 choices.
@@ -110,19 +110,22 @@ cargo run --bin swiyu-issuer-mgmtapi
 cargo run --bin swiyu-issuer-oidcapi
 ```
 
-### Bootstrap a tenant and mint an API token
+### Bootstrap a tenant and obtain a token
 
 ```sh
 # Seed the dev tenant from .env (idempotent).
 cargo run --bin swiyu-issuer-cli -- tenant bootstrap-dev-from-env
 
-# Mint a tenant-scoped bearer token for the dev tenant.
-# --tenant also accepts a bare tenant id or a business partner UUID;
-# --name is optional and defaults to a generated label.
-cargo run --bin swiyu-issuer-cli -- tenant api-token mint --tenant dev
+# Obtain a tenant-scoped bearer JWT for the dev tenant from Keycloak
+# (the dev-ba client), via the client-credentials grant.
+curl -s -X POST \
+  "$KEYCLOAK_TOKEN_URL" \
+  -d grant_type=client_credentials \
+  -u "$DEV_BA_CLIENT_ID:$DEV_BA_CLIENT_SECRET"
 ```
 
-The bundled compose stack runs `bootstrap-dev-tenant` for you on every
+The bundled compose stack runs `bootstrap-dev-tenant`, launches Keycloak, and
+provisions the dev tenant's `tenant_id` mapper for you on every
 `docker compose up`.
 
 ## Examples

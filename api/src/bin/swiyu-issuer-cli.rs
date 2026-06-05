@@ -1,7 +1,6 @@
 use std::env;
 use std::io;
 
-use chrono::Duration;
 use clap::{ArgGroup, Args, Parser, Subcommand};
 use secrecy::SecretString;
 use sqlx::PgPool;
@@ -123,11 +122,6 @@ enum TenantCommand {
     /// provisioning service-account client from
     /// `KEYCLOAK_PROVISIONER_CLIENT_ID` / `KEYCLOAK_PROVISIONER_CLIENT_SECRET`.
     SyncKeycloakMapper(SyncKeycloakMapperArgs),
-    /// API tokens scoped to a tenant.
-    ApiToken {
-        #[command(subcommand)]
-        command: ApiTokenCommand,
-    },
     /// Write a fresh OAuth2 refresh token (the "renewal token" from
     /// the ePortal) into the named tenant's row. Idempotent.
     ImportOauthRefreshToken(ImportOauthRefreshTokenArgs),
@@ -257,32 +251,6 @@ struct SyncKeycloakMapperArgs {
     client: String,
 }
 
-#[derive(Subcommand, Debug)]
-enum ApiTokenCommand {
-    /// Mint a new API token for the named tenant. Prints the bare wire form
-    /// (`tok_…`) once on stdout; only the hash is persisted.
-    Mint {
-        /// Tenant: `dev` for the dev tenant (`DEV_TENANT_PARTNER_ID`), its
-        /// bare base58 id (no `tenant_` prefix), or its business partner
-        /// UUID.
-        #[arg(long, value_parser = parse_tenant_ref)]
-        tenant: TenantRef,
-        /// Operator-supplied label; surfaces in audit logs once the audit
-        /// slice lands. Optional — defaults to a generated label naming
-        /// the tenant and date (see `mint_token`).
-        #[arg(long)]
-        name: Option<String>,
-        /// Lifetime of the token, e.g. `30d`, `12h`, `90m`. Omit for a
-        /// non-expiring token.
-        #[arg(long)]
-        expires_in: Option<String>,
-        /// Print only the bare `tok_…` secret on stdout, with no labels or
-        /// banner. For scripting, e.g. `TOKEN=$(… mint --token-only)`.
-        #[arg(long)]
-        token_only: bool,
-    },
-}
-
 #[tokio::main]
 async fn main() -> std::process::ExitCode {
     // Logs go to stderr so callers can capture the CLI's stdout (e.g.
@@ -314,14 +282,6 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             TenantCommand::BootstrapDevFromEnv(args) => bootstrap_dev_from_env(args).await,
             TenantCommand::EnsureDevIssuerFromEnv => ensure_dev_issuer_from_env().await,
             TenantCommand::SyncKeycloakMapper(args) => sync_keycloak_mapper(args).await,
-            TenantCommand::ApiToken { command } => match command {
-                ApiTokenCommand::Mint {
-                    tenant,
-                    name,
-                    expires_in,
-                    token_only,
-                } => mint_token(tenant, name, expires_in.as_deref(), token_only).await,
-            },
             TenantCommand::ImportOauthRefreshToken(args) => import_oauth_refresh_token(args).await,
             TenantCommand::SetOauthCredentials(args) => set_oauth_credentials(args).await,
         },
@@ -454,45 +414,6 @@ async fn ensure_dev_issuer_from_env() -> Result<(), Box<dyn std::error::Error>> 
     Ok(())
 }
 
-async fn mint_token(
-    tenant: TenantRef,
-    name: Option<String>,
-    expires_in: Option<&str>,
-    token_only: bool,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let database_url = env::var("DATABASE_URL").map_err(|_| "DATABASE_URL must be set")?;
-    let pool: PgPool = persistence::connect(&database_url).await?;
-    persistence::run_migrations(&pool).await?;
-    let tenant_id = resolve_tenant_ref(&pool, tenant).await?;
-
-    let name = name.unwrap_or_else(|| {
-        format!(
-            "API-Token for {}, generated {}",
-            tenant_id.bare(),
-            chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ")
-        )
-    });
-    let expires_in = expires_in.map(parse_duration).transpose()?;
-    let expires_at = expires_in.map(|d| chrono::Utc::now() + d);
-
-    let minted = cli::tenant::api_token::mint(&pool, tenant_id, name, expires_at).await?;
-
-    // The secret is shown only here and never persisted in clear, so it
-    // is printed once for the operator to copy.
-    if token_only {
-        println!("{}", minted.secret.as_wire());
-    } else {
-        println!(
-            "Generated token. Use the secret as API token. Save it now; only its hash is persisted."
-        );
-        println!("id:     {}", minted.token.id);
-        println!("name:   {}", minted.token.name);
-        println!("secret: {}", minted.secret.as_wire());
-    }
-
-    Ok(())
-}
-
 async fn import_oauth_refresh_token(
     args: ImportOauthRefreshTokenArgs,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -598,49 +519,9 @@ async fn set_oauth_credentials(
     Ok(())
 }
 
-/// Wraps `humantime::parse_duration` and converts to `chrono::Duration`.
-///
-/// Accepts any format `humantime` accepts (`30s`, `5m`, `12h`, `30d`,
-/// `1h30m`, `1d6h`, …). Zero-length durations are rejected because an
-/// already-expired token is never useful.
-fn parse_duration(s: &str) -> Result<Duration, String> {
-    let std_dur =
-        humantime::parse_duration(s).map_err(|err| format!("invalid duration {s:?}: {err}"))?;
-    if std_dur.is_zero() {
-        return Err(format!("duration must be positive: {s:?}"));
-    }
-    Duration::from_std(std_dur).map_err(|err| format!("duration out of supported range: {err}"))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn parse_duration_accepts_simple_units() {
-        assert_eq!(parse_duration("30s").unwrap(), Duration::seconds(30));
-        assert_eq!(parse_duration("5m").unwrap(), Duration::minutes(5));
-        assert_eq!(parse_duration("12h").unwrap(), Duration::hours(12));
-        assert_eq!(parse_duration("90d").unwrap(), Duration::days(90));
-    }
-
-    #[test]
-    fn parse_duration_accepts_compound_form() {
-        assert_eq!(
-            parse_duration("1h30m").unwrap(),
-            Duration::hours(1) + Duration::minutes(30)
-        );
-    }
-
-    #[test]
-    fn parse_duration_rejects_zero() {
-        assert!(parse_duration("0s").is_err());
-    }
-
-    #[test]
-    fn parse_duration_rejects_garbage() {
-        assert!(parse_duration("notaduration").is_err());
-    }
 
     #[test]
     fn parse_tenant_ref_classifies_bare_id() {

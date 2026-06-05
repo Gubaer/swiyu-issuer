@@ -16,7 +16,7 @@
 // UUIDs were rejected for being unnecessarily long.
 //
 // Prefix discipline: each ID type carries a textual prefix
-// (tenant_, issuer_, offer_, credential_, status_list_, apitok_,
+// (tenant_, issuer_, offer_, credential_, status_list_,
 // task_, ctype_) when displayed but stores only the bare form
 // internally.
 //
@@ -186,7 +186,6 @@ define_id!(IssuerId, "issuer");
 define_id!(CredentialOfferId, "offer");
 define_id!(IssuedCredentialId, "credential");
 define_id!(StatusListId, "status_list");
-define_id!(ApiTokenId, "apitok");
 define_id!(TaskId, "task");
 define_id!(CredentialTypeId, "ctype");
 

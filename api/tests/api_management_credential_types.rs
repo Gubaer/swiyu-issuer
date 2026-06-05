@@ -440,7 +440,7 @@ async fn create_rejects_request_without_authorization(pool: PgPool) {
 
 async fn create_and_return_id(
     state: swiyu_issuer::api_management::AppState,
-    secret: &swiyu_issuer::domain::ApiTokenSecret,
+    secret: &swiyu_issuer::test_support::api::tokens::TestToken,
 ) -> String {
     let app = router(state);
     let resp = app

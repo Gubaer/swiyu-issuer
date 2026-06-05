@@ -36,7 +36,7 @@ fn valid_create_body() -> serde_json::Value {
 
 async fn create_credential_type(
     state: swiyu_issuer::api_management::AppState,
-    secret: &swiyu_issuer::domain::ApiTokenSecret,
+    secret: &swiyu_issuer::test_support::api::tokens::TestToken,
 ) -> String {
     let resp = router(state)
         .oneshot(post_request_json(

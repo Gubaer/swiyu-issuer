@@ -422,6 +422,47 @@ impl JwksCache {
     }
 }
 
+/// Test-only constructor: a validator backed by a fixed, in-memory JWKS so
+/// tests can mint and validate JWTs without an HTTP round-trip to Keycloak.
+#[cfg(any(test, feature = "test-support"))]
+impl TokenValidator {
+    pub fn with_static_jwks(issuer_url: String, audience: String, jwks_keys: Vec<Value>) -> Self {
+        let keys = jwks_keys
+            .into_iter()
+            .filter_map(|key| {
+                key.get("kid")
+                    .and_then(Value::as_str)
+                    .map(|kid| (kid.to_string(), key.clone()))
+            })
+            .collect();
+        Self {
+            expected_iss: issuer_url,
+            expected_aud: audience,
+            leeway_secs: DEFAULT_LEEWAY_SECS,
+            jwks: JwksCache::with_static_keys(keys),
+        }
+    }
+}
+
+#[cfg(any(test, feature = "test-support"))]
+impl JwksCache {
+    fn with_static_keys(keys: HashMap<String, Value>) -> Self {
+        Self {
+            jwks_url: String::new(),
+            http: reqwest::Client::new(),
+            // A TTL far past any test run, so the cache is never stale and
+            // never attempts an HTTP refresh.
+            ttl: Duration::from_secs(60 * 60 * 24 * 3650),
+            cooldown: Duration::from_secs(0),
+            state: RwLock::new(CacheState {
+                keys,
+                fetched_at: Some(Instant::now()),
+                last_attempt: None,
+            }),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

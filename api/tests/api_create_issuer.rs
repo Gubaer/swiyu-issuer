@@ -10,7 +10,7 @@ use sqlx::PgPool;
 use tower::ServiceExt;
 
 use swiyu_issuer::api_management::router;
-use swiyu_issuer::domain::{ApiTokenSecret, IssuerId, TaskId, TaskState};
+use swiyu_issuer::domain::{IssuerId, TaskId, TaskState};
 use swiyu_issuer::persistence;
 
 use swiyu_issuer::test_support::api::authenticated_app_state;
@@ -245,7 +245,7 @@ async fn rejects_unknown_bearer_token(pool: PgPool) {
     let (state, _tenant_id, _secret) = authenticated_app_state(&pool).await;
     let app = router(state);
 
-    let bogus = ApiTokenSecret::generate();
+    let bogus = swiyu_issuer::test_support::api::tokens::TestToken::bogus();
     let body = json!({ "description": "ok", "display_name": "ok" });
     let response = app
         .oneshot(post_request_json(

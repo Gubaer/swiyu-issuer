@@ -125,20 +125,16 @@ docker compose up -d
 The first run pulls four images (Postgres, Vault, and the three
 `swiyu-issuer` images) and brings them up in dependency order.
 
-Once `bootstrap-dev-tenant` has finished, mint a bearer token for the
-management API. The `dev` keyword resolves the dev tenant from
-`DEV_TENANT_PARTNER_ID`, so there's no id to look up:
+Once the stack is up (including Keycloak and `bootstrap-dev-ba-mapper`),
+obtain a bearer JWT for the management API from Keycloak using the
+`dev-ba` client-credentials grant:
 
 ```sh
-docker compose run --rm swiyu-issuer-cli \
-    tenant api-token mint --tenant dev --name explorer
-```
-
-The CLI prints a `tok_<base58>` token. Save it and curl the health
-endpoints to confirm both binaries are up:
-
-```sh
-TOKEN=tok_...
+TOKEN=$(curl -s -X POST \
+  "http://localhost:${KEYCLOAK_HOST_PORT:-8083}/realms/swiyu-issuer/protocol/openid-connect/token" \
+  -d grant_type=client_credentials \
+  -u "${DEV_BA_CLIENT_ID:-dev-ba}:${DEV_BA_CLIENT_SECRET:-dev-ba-secret}" \
+  | python3 -c 'import json,sys; print(json.load(sys.stdin)["access_token"])')
 
 curl -fsS http://localhost:8080/healthz
 curl -fsS http://localhost:8081/healthz
