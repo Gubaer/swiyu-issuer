@@ -98,6 +98,36 @@ services:
       - vault secrets enable transit || true
     restart: "no"
 
+  # Keycloak authorization server (development). Boots the swiyu-issuer
+  # realm from the baked-in import so the dev-ba client can mint
+  # EdDSA-signed JWTs that swiyu-issuer-mgmtapi validates. See
+  # api/deploy/keycloak/.
+  keycloak:
+    build:
+      context: deploy/keycloak
+      dockerfile: Dockerfile
+    image: swiyu-issuer-keycloak
+    container_name: swiyu-issuer-keycloak
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN:-admin}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
+    ports:
+      - "${KEYCLOAK_HOST_PORT:-8083}:8080"
+      - "${KEYCLOAK_MGMT_HOST_PORT:-9000}:9000"
+    # The Keycloak image ships bash but no curl, so the readiness probe
+    # talks to the management health endpoint (port 9000) over bash's
+    # /dev/tcp.
+    healthcheck:
+      test:
+        - CMD
+        - bash
+        - -c
+        - 'exec 3<>/dev/tcp/127.0.0.1/9000; printf "GET /health/ready HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n" >&3; grep -q UP <&3'
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    restart: unless-stopped
+
   # One-shot dev seed: brings up the contributor's dev tenant from
   # `.env`. `swiyu-issuer-cli tenant bootstrap-dev-from-env` finds the
   # tenant row by DEV_TENANT_PARTNER_ID (creating it if missing) and
@@ -188,6 +218,39 @@ services:
         swiyu-issuer-cli tenant bootstrap-dev-from-env >/dev/null
     restart: "no"
 
+  # Provisions the dev tenant's tenant_id claim mapper on the dev-ba
+  # Keycloak client over the Admin API (authenticating as the
+  # provisioner service-account client) so dev-ba's access tokens carry
+  # tenant_id. Runs once the dev tenant exists and Keycloak is healthy.
+  # Idempotent.
+  bootstrap-dev-ba-mapper:
+    build:
+      context: ..
+      dockerfile: api/Dockerfile
+      target: runtime-cli
+    container_name: swiyu-issuer-bootstrap-dev-ba-mapper
+    depends_on:
+      postgres:
+        condition: service_healthy
+      bootstrap-dev-tenant:
+        condition: service_completed_successfully
+      keycloak:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-swiyu_issuer}:${POSTGRES_PASSWORD:-swiyu_issuer}@postgres:5432/${POSTGRES_DB:-swiyu_issuer}
+      DEV_TENANT_PARTNER_ID: ${DEV_TENANT_PARTNER_ID:-}
+      KEYCLOAK_PROVISIONER_CLIENT_ID: ${KEYCLOAK_PROVISIONER_CLIENT_ID:-provisioner}
+      KEYCLOAK_PROVISIONER_CLIENT_SECRET: ${KEYCLOAK_PROVISIONER_CLIENT_SECRET:-provisioner-secret}
+      RUST_LOG: ${RUST_LOG:-info,swiyu_issuer=debug}
+    command:
+      - tenant
+      - sync-keycloak-mapper
+      - --tenant
+      - dev
+      - --keycloak-url
+      - http://keycloak:8080
+    restart: "no"
+
   # Phase B of dev provisioning: ensure the dev tenant has an Active
   # issuer. `swiyu-issuer-cli tenant ensure-dev-issuer-from-env` looks
   # up the tenant by DEV_TENANT_PARTNER_ID, enqueues the same
@@ -260,6 +323,16 @@ services:
       SWIYU_IDENTIFIER_REGISTRY_URL: ${SWIYU_IDENTIFIER_REGISTRY_URL:-https://identifier-reg-api.trust-infra.swiyu-int.admin.ch}
       SWIYU_STATUS_REGISTRY_URL: ${SWIYU_STATUS_REGISTRY_URL:-https://status-reg-api.trust-infra.swiyu-int.admin.ch}
       SWIYU_TOKEN_URL: ${SWIYU_TOKEN_URL:-https://keymanager-prd.api.admin.ch/keycloak/realms/APIGW/protocol/openid-connect/token}
+      # OAuth2 resource-server validation of business-application JWTs.
+      # KEYCLOAK_ISSUER_URL is the host-facing realm URL the smoke mints
+      # tokens against, so it matches the token `iss`; the JWKS is fetched
+      # over the in-container hostname (the host URL is unreachable from
+      # inside the compose network). MGMTAPI_AUDIENCE must equal the
+      # bearer-only resource client id in the realm. Unset both to fall
+      # back to legacy opaque-token auth only.
+      KEYCLOAK_ISSUER_URL: ${KEYCLOAK_ISSUER_URL:-http://localhost:8083/realms/swiyu-issuer}
+      KEYCLOAK_JWKS_URL: ${KEYCLOAK_JWKS_URL:-http://keycloak:8080/realms/swiyu-issuer/protocol/openid-connect/certs}
+      MGMTAPI_AUDIENCE: ${MGMTAPI_AUDIENCE:-swiyu-issuer-mgmtapi}
       # Smoke-test friendly default: debug for our crates, info for
       # known-noisy deps (sqlx prints every prepared statement at debug;
       # hyper/h2/reqwest/tower flood with per-byte trace lines).

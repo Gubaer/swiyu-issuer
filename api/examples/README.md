@@ -20,8 +20,7 @@ cargo run --example <name>
 
 All three:
 
-- mint a fresh `ApiToken` at startup (TTL 1 h) so orphaned rows expire on their own without manual cleanup,
-- resolve the dev tenant by looking up `DEV_TENANT_PARTNER_ID` (the contributor's `.env` value, materialised by the compose `bootstrap-dev-tenant` service via `swiyu-issuer-cli tenant bootstrap-dev-from-env`) and fail with a clear error if no such tenant exists,
+- obtain a `dev-ba` access token at startup — a Keycloak-issued JWT via the client-credentials grant against `KEYCLOAK_TOKEN_URL` — and use it as the `Authorization: Bearer` credential, so the smokes exercise the same OAuth2 path real callers use,
 - print `=== smoke run PASSED ===` on success and exit non-zero on failure, so they're CI-friendly.
 
 ## Environment
@@ -31,15 +30,16 @@ The examples read configuration from the process environment. The repo's `.env.e
 | Variable                  | Required? | Used by                                  | Notes                                                                                  |
 |---------------------------|-----------|------------------------------------------|----------------------------------------------------------------------------------------|
 | `ISSUER_BASE_URL`         | yes       | all three                                | Management API base, e.g. `http://localhost:8080`. Also used as the OIDC `aud`.        |
-| `DATABASE_URL`            | yes       | all three                                | The smokes mint their own `ApiToken` directly in the DB; they don't go through an API. |
-| `DEV_TENANT_PARTNER_ID`   | yes       | all three                                | UUID of the contributor's SWIYU Business Partner; the smokes resolve the dev tenant by this value. Must match the row materialised by the compose `bootstrap-dev-tenant` service. |
+| `KEYCLOAK_TOKEN_URL`      | yes       | all three                                | Realm token endpoint, e.g. `http://localhost:8083/realms/swiyu-issuer/protocol/openid-connect/token`. The smokes obtain a `dev-ba` JWT here via the client-credentials grant. |
+| `DEV_BA_CLIENT_ID`        | yes       | all three                                | Keycloak client id of the sample business application (`dev-ba`).                       |
+| `DEV_BA_CLIENT_SECRET`    | yes       | all three                                | Client secret for `dev-ba`. Treat as a secret.                                          |
 | `ISSUER_OIDC_HTTP_URL`    | no        | `credential_lifecycle_smoke`, `credential_status_lifecycle_smoke` | URL the OIDC binary listens on. Defaults to `http://localhost:8081`.                   |
 | `LIFECYCLE_TIMEOUT_SECS`  | no        | all three                                | Per-phase timeout. Default: 120.                                                       |
 | `LIFECYCLE_POLL_MS`       | no        | all three                                | Polling interval while waiting on async sagas. Default: 1000.                          |
 | `SIGNING_ENGINE`          | no        | all three (informational)                | Logged at startup so the run record shows which backend `swiyu-issuer-mgmtapi` is using. The smoke does not act on it — it is `swiyu-issuer-mgmtapi`'s choice.                                                       |
 | `RUST_LOG`                | no        | all three                                | Standard `tracing-subscriber` filter. Default: `info`.                                 |
 
-The smokes do not call the registries directly; they observe the management API and the database. Whichever `SWIYU_*` and `OAUTH2_*` variables `swiyu-issuer-mgmtapi` needs must therefore be set in *its* environment, not the smoke's.
+The smokes do not call the registries or the database directly; they go through the management and OIDC APIs over HTTP, authenticating with a `dev-ba` JWT. Whichever `SWIYU_*` and `OAUTH2_*` variables `swiyu-issuer-mgmtapi` needs must therefore be set in *its* environment, not the smoke's.
 
 ## Typical run against the dev compose stack
 

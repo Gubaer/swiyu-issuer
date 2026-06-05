@@ -117,6 +117,12 @@ enum TenantCommand {
     /// the mgmtapi service to be healthy. Designed for the docker
     /// `bootstrap-dev-issuer` sidecar.
     EnsureDevIssuerFromEnv,
+    /// Upsert the tenant's `tenant_id` claim mapper on a Keycloak client
+    /// (default `dev-ba`) over the Admin API, so that client's access
+    /// tokens carry `tenant_id`. Idempotent. Authenticates as the
+    /// provisioning service-account client from
+    /// `KEYCLOAK_PROVISIONER_CLIENT_ID` / `KEYCLOAK_PROVISIONER_CLIENT_SECRET`.
+    SyncKeycloakMapper(SyncKeycloakMapperArgs),
     /// API tokens scoped to a tenant.
     ApiToken {
         #[command(subcommand)]
@@ -234,6 +240,23 @@ struct SetOauthCredentialsArgs {
     only_if_empty: bool,
 }
 
+#[derive(Args, Debug)]
+struct SyncKeycloakMapperArgs {
+    /// Target tenant: `dev` (resolved via `DEV_TENANT_PARTNER_ID`), a bare
+    /// base58 tenant id, or the business partner UUID.
+    #[arg(long, value_parser = parse_tenant_ref, default_value = "dev")]
+    tenant: TenantRef,
+    /// Keycloak server base URL, e.g. `http://keycloak:8080`.
+    #[arg(long)]
+    keycloak_url: String,
+    /// Realm holding the client.
+    #[arg(long, default_value = "swiyu-issuer")]
+    realm: String,
+    /// Client whose `tenant_id` mapper to upsert.
+    #[arg(long, default_value = "dev-ba")]
+    client: String,
+}
+
 #[derive(Subcommand, Debug)]
 enum ApiTokenCommand {
     /// Mint a new API token for the named tenant. Prints the bare wire form
@@ -290,6 +313,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             TenantCommand::Update(args) => update_tenant(args).await,
             TenantCommand::BootstrapDevFromEnv(args) => bootstrap_dev_from_env(args).await,
             TenantCommand::EnsureDevIssuerFromEnv => ensure_dev_issuer_from_env().await,
+            TenantCommand::SyncKeycloakMapper(args) => sync_keycloak_mapper(args).await,
             TenantCommand::ApiToken { command } => match command {
                 ApiTokenCommand::Mint {
                     tenant,
@@ -365,6 +389,41 @@ async fn bootstrap_dev_from_env(
     println!("{}", tenant_id.bare());
     eprintln!("bootstrapped dev tenant {}", tenant_id.bare());
 
+    Ok(())
+}
+
+async fn sync_keycloak_mapper(
+    args: SyncKeycloakMapperArgs,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let database_url = env::var("DATABASE_URL").map_err(|_| "DATABASE_URL must be set")?;
+    let pool: PgPool = persistence::connect(&database_url).await?;
+    persistence::run_migrations(&pool).await?;
+    let tenant_id = resolve_tenant_ref(&pool, args.tenant).await?;
+
+    let provisioner_client_id = env::var("KEYCLOAK_PROVISIONER_CLIENT_ID")
+        .map_err(|_| "KEYCLOAK_PROVISIONER_CLIENT_ID must be set")?;
+    let provisioner_client_secret = env::var("KEYCLOAK_PROVISIONER_CLIENT_SECRET")
+        .map_err(|_| "KEYCLOAK_PROVISIONER_CLIENT_SECRET must be set")?;
+
+    // The claim value is the prefixed tenant id (e.g. `tenant_…`), which is the
+    // form the resource server parses back into a TenantId.
+    let outcome = cli::keycloak::sync_tenant_id_mapper(
+        &args.keycloak_url,
+        &args.realm,
+        &args.client,
+        &tenant_id.to_string(),
+        &provisioner_client_id,
+        &provisioner_client_secret,
+    )
+    .await?;
+
+    eprintln!(
+        "{} tenant_id mapper on client '{}' (realm '{}') = {}",
+        outcome.verb(),
+        args.client,
+        args.realm,
+        tenant_id
+    );
     Ok(())
 }
 

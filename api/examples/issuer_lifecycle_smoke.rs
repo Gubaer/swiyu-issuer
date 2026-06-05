@@ -3,25 +3,18 @@ use std::process::ExitCode;
 use std::str::FromStr;
 use std::time::{Duration, Instant};
 
-use chrono::Utc;
 use reqwest::header::{AUTHORIZATION, CONTENT_TYPE, HeaderMap, HeaderValue};
 use reqwest::{Client, Response, StatusCode};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use swiyu_core::did::DID;
-use swiyu_issuer::domain::{ApiToken, ApiTokenSecret};
-use swiyu_issuer::persistence;
 use thiserror::Error;
 use tokio::time::sleep;
-use uuid::Uuid;
+
+mod common;
 
 const DEFAULT_TIMEOUT_SECS: u64 = 120;
 const DEFAULT_POLL_MS: u64 = 1000;
-
-// Lifetime of the token the smoke mints at startup. Long enough for a
-// slow or interactive run, short enough that orphaned rows expire on
-// their own without manual cleanup.
-const SMOKE_TOKEN_TTL: Duration = Duration::from_secs(60 * 60);
 
 #[tokio::main]
 async fn main() -> ExitCode {
@@ -72,7 +65,6 @@ fn init_tracing() {
 
 struct Config {
     mgmt_url: String,
-    database_url: String,
     task_timeout: Duration,
     poll_interval: Duration,
 }
@@ -83,7 +75,6 @@ impl Config {
             mgmt_url: required("ISSUER_BASE_URL")?
                 .trim_end_matches('/')
                 .to_string(),
-            database_url: required("DATABASE_URL")?,
             task_timeout: Duration::from_secs(parse_u64_env(
                 "LIFECYCLE_TIMEOUT_SECS",
                 DEFAULT_TIMEOUT_SECS,
@@ -189,8 +180,9 @@ struct TaskStatus {
 }
 
 async fn run(cfg: &Config) -> Result<(), SmokeError> {
-    let token = mint_smoke_token(&cfg.database_url)
+    let token = common::fetch_dev_ba_token()
         .await
+        .map_err(PhaseError::Setup)
         .map_err(phase("init"))?;
     let mgmt = Mgmt::new(&cfg.mgmt_url, &token).map_err(|e| SmokeError::Phase {
         phase: "init",
@@ -541,62 +533,6 @@ async fn wait_until_completed(mgmt: &Mgmt, task_id: &str, cfg: &Config) -> Resul
         }
         sleep(cfg.poll_interval).await;
     }
-}
-
-async fn mint_smoke_token(database_url: &str) -> Result<String, PhaseError> {
-    let pool = persistence::connect(database_url)
-        .await
-        .map_err(|e| PhaseError::Setup(format!("connect to {database_url}: {e}")))?;
-    persistence::run_migrations(&pool)
-        .await
-        .map_err(|e| PhaseError::Setup(format!("run migrations: {e}")))?;
-    let mut conn = pool
-        .acquire()
-        .await
-        .map_err(|e| PhaseError::Setup(format!("acquire connection: {e}")))?;
-
-    let partner_id_str = env::var("DEV_TENANT_PARTNER_ID")
-        .map_err(|_| PhaseError::Setup("DEV_TENANT_PARTNER_ID must be set".into()))?;
-    let partner_id: Uuid = partner_id_str
-        .parse()
-        .map_err(|e| PhaseError::Setup(format!("invalid DEV_TENANT_PARTNER_ID: {e}")))?;
-    let tenant = persistence::tenants::find_by_partner_id(&mut conn, partner_id)
-        .await
-        .map_err(|e| PhaseError::Setup(format!("find tenant by partner_id: {e}")))?
-        .ok_or_else(|| {
-            PhaseError::Setup(format!(
-                "no tenant with partner_id {partner_id}; run `swiyu-issuer-cli tenant bootstrap-dev-from-env` first"
-            ))
-        })?;
-    let tenant_bare = tenant.id.bare().to_string();
-    let secret = ApiTokenSecret::generate();
-    let expires_at = Some(
-        Utc::now()
-            + chrono::Duration::from_std(SMOKE_TOKEN_TTL)
-                .expect("SMOKE_TOKEN_TTL fits in chrono::Duration"),
-    );
-    let token = ApiToken::new(
-        tenant.id,
-        format!(
-            "issuer-lifecycle-smoke {}",
-            Utc::now().format("%Y-%m-%dT%H:%M:%SZ")
-        ),
-        secret.hash(),
-        expires_at,
-    );
-
-    persistence::api_tokens::insert(&mut conn, &token)
-        .await
-        .map_err(|e| PhaseError::Setup(format!("insert api_token row: {e}")))?;
-
-    tracing::info!(
-        token_id = %token.id,
-        tenant = %tenant_bare,
-        ttl_secs = SMOKE_TOKEN_TTL.as_secs(),
-        "✓ smoke API token minted",
-    );
-
-    Ok(secret.as_wire())
 }
 
 // The DID encodes its own resolver location: `did:tdw:{scid}:{host}:{path}`

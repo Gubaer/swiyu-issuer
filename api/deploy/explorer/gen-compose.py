@@ -37,8 +37,10 @@ SERVICE_TO_IMAGE = {
     "swiyu-issuer-mgmtapi": "swiyu-issuer-mgmtapi",
     "swiyu-issuer-oidcapi": "swiyu-issuer-oidcapi",
     "swiyu-issuer-cli": "swiyu-issuer-cli",
+    "keycloak": "swiyu-issuer-keycloak",
     "bootstrap-dev-tenant": "swiyu-issuer-cli",
     "bootstrap-dev-issuer": "swiyu-issuer-cli",
+    "bootstrap-dev-ba-mapper": "swiyu-issuer-cli",
 }
 
 EXPLORER_HEADER = """\
