@@ -56,21 +56,28 @@ if [[ "${PUSH}" -eq 1 ]] && ! command -v jq >/dev/null 2>&1; then
     exit 1
 fi
 
-STAGES=(mgmtapi oidcapi cli)
-
 cd "${REPO_ROOT}"
 
 PUSHED_REFS=()
 
-for stage in "${STAGES[@]}"; do
-    image_name="swiyu-issuer-${stage}"
-    target="runtime-${stage}"
+# build_image <image_name> <dockerfile> <context> [target]
+#
+# Builds one image and, on a --push run, appends its pushed digest ref to the
+# global PUSHED_REFS. The runtime-* stages share api/Dockerfile and the repo
+# root as context; Keycloak has its own Dockerfile, its own context, and no
+# build target — hence the parameterization.
+build_image() {
+    local image_name="$1"
+    local dockerfile="$2"
+    local context="$3"
+    local target="${4:-}"
 
     # buildx pushes every -t when --push is set, so on a push run we use
     # only the ${REGISTRY}/-prefixed names. Unprefixed local-only tags
     # would otherwise resolve to docker.io/library/<name> and fail with
     # "push access denied". Dry runs (--load) keep the local-only tags
     # so the images can be used from the local docker daemon directly.
+    local TAGS
     if [[ "${PUSH}" -eq 1 ]]; then
         TAGS=(
             -t "${REGISTRY}/${image_name}:swiyu-beta"
@@ -83,7 +90,7 @@ for stage in "${STAGES[@]}"; do
         )
     fi
 
-    LABELS=(
+    local LABELS=(
         --label "org.opencontainers.image.version=${VERSION}"
         --label "org.opencontainers.image.revision=${GIT_REVISION}"
         --label "org.opencontainers.image.created=${BUILD_CREATED}"
@@ -92,7 +99,7 @@ for stage in "${STAGES[@]}"; do
     # Registry cache is only used alongside --push. Without --push there's no
     # cache to import from (nothing was ever pushed) and trying logs a noisy
     # buildx ERROR. Local buildkit cache handles repeat dry runs.
-    CACHE_ARGS=()
+    local CACHE_ARGS=()
     if [[ "${PUSH}" -eq 1 ]]; then
         CACHE_ARGS+=(
             --cache-from "type=registry,ref=${REGISTRY}/${image_name}:buildcache"
@@ -100,8 +107,8 @@ for stage in "${STAGES[@]}"; do
         )
     fi
 
-    metadata_file=""
-    EXTRA_ARGS=()
+    local metadata_file=""
+    local EXTRA_ARGS=()
     if [[ "${PUSH}" -eq 1 ]]; then
         metadata_file="$(mktemp)"
         EXTRA_ARGS+=(--push --metadata-file "${metadata_file}")
@@ -109,24 +116,42 @@ for stage in "${STAGES[@]}"; do
         EXTRA_ARGS+=(--load)
     fi
 
-    echo "==> Building ${image_name} (target ${target}, platforms ${PLATFORMS})"
+    local TARGET_ARGS=()
+    if [[ -n "${target}" ]]; then
+        TARGET_ARGS+=(--target "${target}")
+    fi
+
+    echo "==> Building ${image_name} (${target:+target ${target}, }platforms ${PLATFORMS})"
     docker buildx build \
-        -f api/Dockerfile \
-        --target "${target}" \
+        -f "${dockerfile}" \
+        "${TARGET_ARGS[@]+"${TARGET_ARGS[@]}"}" \
         --platform "${PLATFORMS}" \
         "${TAGS[@]}" \
         "${LABELS[@]}" \
         "${CACHE_ARGS[@]+"${CACHE_ARGS[@]}"}" \
         "${EXTRA_ARGS[@]}" \
         "${DOCKER_ARGS[@]+"${DOCKER_ARGS[@]}"}" \
-        .
+        "${context}"
 
     if [[ "${PUSH}" -eq 1 ]]; then
+        local digest
         digest="$(jq -r '."containerimage.digest"' "${metadata_file}")"
         rm -f "${metadata_file}"
         PUSHED_REFS+=("${REGISTRY}/${image_name}@${digest}")
     fi
+}
+
+# The Rust runtime images, all built from api/Dockerfile with the repo root as
+# context.
+for stage in mgmtapi oidcapi cli; do
+    build_image "swiyu-issuer-${stage}" "api/Dockerfile" "." "runtime-${stage}"
 done
+
+# Keycloak: stock Keycloak with the swiyu-issuer realm baked in. Its own
+# Dockerfile and context (the realm COPY is relative to api/deploy/keycloak),
+# and no build target. The explorer stack pulls this as
+# ${REGISTRY}/swiyu-issuer-keycloak.
+build_image "swiyu-issuer-keycloak" "api/deploy/keycloak/Dockerfile" "api/deploy/keycloak"
 
 if [[ "${PUSH}" -eq 1 ]]; then
     echo
