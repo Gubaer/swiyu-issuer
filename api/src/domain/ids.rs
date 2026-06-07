@@ -188,6 +188,8 @@ define_id!(IssuedCredentialId, "credential");
 define_id!(StatusListId, "status_list");
 define_id!(TaskId, "task");
 define_id!(CredentialTypeId, "ctype");
+define_id!(UserAccountId, "account");
+define_id!(InvitationId, "invite");
 
 #[cfg(test)]
 mod tests {

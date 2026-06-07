@@ -2,6 +2,8 @@ pub mod access_token;
 pub mod credential_offer;
 pub mod credential_type;
 pub mod ids;
+pub mod invitation;
+pub mod invitation_code;
 pub mod issued_credential;
 pub mod issuer;
 pub mod issuer_credential_type;
@@ -13,6 +15,7 @@ pub mod secret_encryption_engine;
 pub mod signing_engine;
 pub mod status_list;
 pub mod tenant;
+pub mod user_account;
 
 pub use access_token::{AccessToken, AccessTokenHash, AccessTokenSecret};
 pub use credential_offer::{CredentialOffer, CredentialOfferState};
@@ -26,9 +29,11 @@ pub enum DomainError {
     StateTransitionNotAllowed,
 }
 pub use ids::{
-    CredentialOfferId, CredentialTypeId, IssuedCredentialId, IssuerId, StatusListId, TaskId,
-    TenantId,
+    CredentialOfferId, CredentialTypeId, InvitationId, IssuedCredentialId, IssuerId, StatusListId,
+    TaskId, TenantId, UserAccountId,
 };
+pub use invitation::{Invitation, InvitationState};
+pub use invitation_code::{InvitationCode, InvitationCodeHash};
 pub use issued_credential::{INTEGRITY_HASH_LEN, IssuedCredential, IssuedCredentialState};
 pub use issuer::{Issuer, IssuerState, MarkOutcome};
 pub use issuer_credential_type::IssuerCredentialTypeAssignment;
@@ -52,3 +57,4 @@ pub use signing_engine::{
 };
 pub use status_list::{BITSTRING_BYTES, StatusList, StatusListIndex, StatusValue};
 pub use tenant::Tenant;
+pub use user_account::{UserAccount, UserAccountState, UserIdentity};
