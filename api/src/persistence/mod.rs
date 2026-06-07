@@ -11,6 +11,8 @@ mod pool;
 pub mod status_lists;
 pub mod tenant_secret_keys;
 pub mod tenants;
+pub mod user_account_invitations;
+pub mod user_accounts;
 
 pub use errors::PersistenceError;
 pub use pool::{connect, run_migrations};
