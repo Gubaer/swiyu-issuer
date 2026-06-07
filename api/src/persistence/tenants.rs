@@ -36,6 +36,25 @@ pub async fn find_by_id(
     Ok(tenant)
 }
 
+/// Existence check used at the request boundary: a validated `tenant` principal
+/// (or an `X-Tenant`-named tenant) must correspond to a real tenant row before
+/// the request is admitted. Cheaper than [`find_by_id`] — no columns fetched.
+pub async fn exists(
+    conn: &mut PgConnection,
+    tenant_id: &TenantId,
+) -> Result<bool, PersistenceError> {
+    let exists = sqlx::query_scalar::<_, bool>(
+        r#"
+        SELECT EXISTS(SELECT 1 FROM tenants WHERE id = $1)
+        "#,
+    )
+    .bind(tenant_id)
+    .fetch_one(conn)
+    .await?;
+
+    Ok(exists)
+}
+
 /// At-most-one lookup by `partner_id`. The UNIQUE constraint on the
 /// column guarantees the result is single-row.
 pub async fn find_by_partner_id(

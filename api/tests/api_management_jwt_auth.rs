@@ -141,7 +141,7 @@ async fn rejects_non_tenant_principal_type() {
     let (_server, validator) = validator_with_jwks(jwks_for(KID, &key.verifying_key())).await;
 
     let mut claims = valid_claims();
-    claims["principal_type"] = json!("bff");
+    claims["principal_type"] = json!("first-party");
     let token = sign_jwt(&key, KID, &claims);
     assert!(validator.validate_tenant(&token, Utc::now()).await.is_err());
 }

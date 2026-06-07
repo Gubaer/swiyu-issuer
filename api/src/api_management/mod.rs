@@ -12,7 +12,7 @@ mod token_validator;
 
 pub use error::ApiError;
 pub use state::{AppState, Config};
-pub use token_validator::{TokenError, TokenValidator};
+pub use token_validator::{Principal, TokenError, TokenValidator};
 
 use crate::domain::{CredentialTypeId, IssuerId};
 

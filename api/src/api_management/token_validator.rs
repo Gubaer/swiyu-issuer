@@ -1,9 +1,10 @@
 //! OAuth2 resource-server validation for the management API.
 //!
 //! `swiyu-issuer-mgmtapi` accepts Keycloak-issued JWT bearer tokens, validates
-//! their EdDSA signature against the realm JWKS, and derives the tenant from a
-//! `tenant_id` claim. This module is the JWT half; the [`TenantContext`]
-//! extractor in [`super::auth`] decides JWT-vs-legacy and calls in here.
+//! their EdDSA signature against the realm JWKS, and classifies the caller on
+//! the `principal_type` claim into a [`Principal`] (a tenant, or the first-party
+//! BFF). This module is the JWT half; the extractors in [`super::auth`] turn a
+//! `Principal` into a request context.
 //!
 //! The validator is optional. When the Keycloak environment is absent the
 //! binary builds no validator, the JWT path stays disabled, and the legacy
@@ -26,9 +27,12 @@ use crate::domain::TenantId;
 /// verification path.
 const EXPECTED_ALG: &str = "EdDSA";
 
-/// The only `principal_type` this validator handles. Tokens representing other
-/// kinds of principal (e.g. `bff`, `user_account`) are rejected.
+/// `principal_type` claim values this validator recognises. A `tenant` token is
+/// bound to one tenant and carries `tenant_id`; a `first-party` token is the
+/// trusted `swiyu-issuer-web` BFF and carries no tenant. Any other value is
+/// rejected. See `aspect-authn.md`.
 const PRINCIPAL_TYPE_TENANT: &str = "tenant";
+const PRINCIPAL_TYPE_FIRST_PARTY: &str = "first-party";
 
 /// Clock-skew leeway for `exp`/`nbf`, in seconds.
 const DEFAULT_LEEWAY_SECS: i64 = 60;
@@ -90,18 +94,13 @@ impl TokenValidator {
         )
     }
 
-    /// Validates `token` and returns the tenant it authenticates.
+    /// Validates `token` and returns the [`Principal`] it authenticates.
     ///
-    /// On success the token is a non-expired, EdDSA-signed JWT from the
-    /// expected realm and audience that represents a tenant principal. Any
-    /// failure is a [`TokenError`]; the reason is kept in a server-side
-    /// `tracing::debug!` rather than in the error, so it does not leak to the
-    /// caller.
-    pub async fn validate_tenant(
-        &self,
-        token: &str,
-        now: DateTime<Utc>,
-    ) -> Result<TenantId, TokenError> {
+    /// On success the token is a non-expired, EdDSA-signed JWT from the expected
+    /// realm and audience, classified on its `principal_type` claim. Any failure
+    /// is a [`TokenError`]; the reason is kept in a server-side `tracing::debug!`
+    /// rather than in the error, so it does not leak to the caller.
+    pub async fn validate(&self, token: &str, now: DateTime<Utc>) -> Result<Principal, TokenError> {
         let parsed = parse_jwt(token).map_err(|_| {
             tracing::debug!("auth(jwt): malformed JWT structure");
             TokenError::Invalid
@@ -153,6 +152,23 @@ impl TokenValidator {
             self.leeway_secs,
         )
     }
+
+    /// Tenant-only convenience over [`validate`](Self::validate): succeeds for a
+    /// `tenant` principal, rejecting a `first-party` token as [`TokenError::Invalid`].
+    /// Used where only a tenant context is meaningful.
+    pub async fn validate_tenant(
+        &self,
+        token: &str,
+        now: DateTime<Utc>,
+    ) -> Result<TenantId, TokenError> {
+        match self.validate(token, now).await? {
+            Principal::Tenant(tenant_id) => Ok(tenant_id),
+            Principal::FirstParty => {
+                tracing::debug!("auth(jwt): tenant principal required, got first-party");
+                Err(TokenError::Invalid)
+            }
+        }
+    }
 }
 
 /// The JWT broken into the pieces signature verification and claim checks need.
@@ -200,16 +216,16 @@ fn parse_jwt(token: &str) -> Result<ParsedJwt, ()> {
     })
 }
 
-/// Checks `iss`/`aud`/`exp`/`nbf`/`principal_type` and returns the `tenant_id`.
-/// Split out from [`TokenValidator::validate_tenant`] so it is unit-testable
-/// without a signature or a network round-trip.
+/// Checks `iss`/`aud`/`exp`/`nbf`/`principal_type` and returns the classified
+/// [`Principal`]. Split out from [`TokenValidator::validate`] so it is
+/// unit-testable without a signature or a network round-trip.
 fn validate_claims(
     payload: &Value,
     expected_iss: &str,
     expected_aud: &str,
     now_ts: i64,
     leeway: i64,
-) -> Result<TenantId, TokenError> {
+) -> Result<Principal, TokenError> {
     let iss = payload.get("iss").and_then(Value::as_str).ok_or_else(|| {
         tracing::debug!("auth(jwt): payload missing `iss`");
         TokenError::Invalid
@@ -247,24 +263,35 @@ fn validate_claims(
             tracing::debug!("auth(jwt): payload missing `principal_type`");
             TokenError::Invalid
         })?;
-    if principal_type != PRINCIPAL_TYPE_TENANT {
-        // Only tenant principals are handled; others are not supported yet.
-        tracing::debug!(%principal_type, "auth(jwt): unsupported principal_type");
-        return Err(TokenError::Invalid);
+    match principal_type {
+        PRINCIPAL_TYPE_TENANT => {
+            let tenant_id = payload
+                .get("tenant_id")
+                .and_then(Value::as_str)
+                .ok_or_else(|| {
+                    tracing::debug!("auth(jwt): tenant principal missing `tenant_id`");
+                    TokenError::Invalid
+                })?;
+            // The claim carries the prefixed form (e.g. `tenant_9hXq2vRtL8pK7f`).
+            // This only *format*-checks the id; whether a tenant with this id
+            // actually exists is a data question, not a token-validity one, and
+            // is kept out of here so claim validation stays pure (no DB, unit-
+            // testable). The boundary existence check lives in the
+            // `TenantContext` extractor (`super::auth::require_tenant_exists`).
+            let tenant_id = tenant_id.parse::<TenantId>().map_err(|err| {
+                tracing::debug!(error = %err, "auth(jwt): `tenant_id` is not a valid tenant id");
+                TokenError::Invalid
+            })?;
+            Ok(Principal::Tenant(tenant_id))
+        }
+        // A first-party token carries no tenant; the request supplies one where
+        // needed (`X-Tenant` or a path resource), handled by the extractors.
+        PRINCIPAL_TYPE_FIRST_PARTY => Ok(Principal::FirstParty),
+        other => {
+            tracing::debug!(principal_type = %other, "auth(jwt): unsupported principal_type");
+            Err(TokenError::Invalid)
+        }
     }
-
-    let tenant_id = payload
-        .get("tenant_id")
-        .and_then(Value::as_str)
-        .ok_or_else(|| {
-            tracing::debug!("auth(jwt): payload missing `tenant_id`");
-            TokenError::Invalid
-        })?;
-    // The claim carries the prefixed form (e.g. `tenant_9hXq2vRtL8pK7f`).
-    tenant_id.parse::<TenantId>().map_err(|err| {
-        tracing::debug!(error = %err, "auth(jwt): `tenant_id` is not a valid tenant id");
-        TokenError::Invalid
-    })
 }
 
 /// `aud` may be a single string or an array of strings (RFC 7519); accept
@@ -284,6 +311,20 @@ enum JwksError {
     Unavailable,
     /// Keys are cached, but none has this `kid`. The caller maps this to 401.
     UnknownKid,
+}
+
+/// The kind of principal a validated token represents, classified on its
+/// `principal_type` claim. This establishes *who* is calling and how the
+/// request's tenant is derived — not what they may do (authorization is flat 
+/// for the time being).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Principal {
+    /// A tenant-bound caller (subaspect 4). Carries the tenant from `tenant_id`.
+    Tenant(TenantId),
+    /// The trusted first-party caller — the `swiyu-issuer-web` BFF (subaspects 5
+    /// and 7). Carries no tenant; where one is needed it comes from the request
+    /// (an `X-Tenant` header or a path resource), never from the token.
+    FirstParty,
 }
 
 #[derive(Deserialize)]
@@ -482,14 +523,16 @@ mod tests {
         })
     }
 
-    fn validate(payload: &Value) -> Result<TenantId, TokenError> {
+    fn validate(payload: &Value) -> Result<Principal, TokenError> {
         validate_claims(payload, ISS, AUD, NOW, DEFAULT_LEEWAY_SECS)
     }
 
     #[test]
     fn accepts_well_formed_tenant_claims() {
-        let tid = validate(&base_claims()).expect("valid claims");
-        assert_eq!(tid.to_string(), TENANT);
+        match validate(&base_claims()).expect("valid claims") {
+            Principal::Tenant(tid) => assert_eq!(tid.to_string(), TENANT),
+            other => panic!("expected tenant principal, got {other:?}"),
+        }
     }
 
     #[test]
@@ -535,12 +578,28 @@ mod tests {
     }
 
     #[test]
-    fn rejects_non_tenant_principal_type() {
-        for pt in ["bff", "user_account", "anything"] {
+    fn accepts_first_party_principal_type() {
+        let mut claims = base_claims();
+        claims["principal_type"] = json!("first-party");
+        // A first-party token carries no tenant; `tenant_id` is not read.
+        claims.as_object_mut().unwrap().remove("tenant_id");
+        assert_eq!(validate(&claims), Ok(Principal::FirstParty));
+    }
+
+    #[test]
+    fn rejects_unknown_principal_type() {
+        for pt in ["user_account", "bff", "anything"] {
             let mut claims = base_claims();
             claims["principal_type"] = json!(pt);
             assert_eq!(validate(&claims), Err(TokenError::Invalid), "pt={pt}");
         }
+    }
+
+    #[test]
+    fn rejects_tenant_principal_missing_tenant_id() {
+        let mut claims = base_claims();
+        claims.as_object_mut().unwrap().remove("tenant_id");
+        assert_eq!(validate(&claims), Err(TokenError::Invalid));
     }
 
     #[test]
