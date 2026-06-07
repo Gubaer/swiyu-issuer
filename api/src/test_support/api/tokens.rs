@@ -66,6 +66,24 @@ pub async fn mint_test_token(_pool: &PgPool, tenant_id: &TenantId) -> TestToken 
     TestToken(sign_with(&TEST_SIGNING_KEY, &tenant_claims(tenant_id)))
 }
 
+/// Mints a valid first-party-principal JWT (the `swiyu-issuer-web` BFF),
+/// accepted by the validator from [`test_token_validator`]. Carries no tenant —
+/// classifies as `Principal::FirstParty`.
+pub fn mint_first_party_token() -> TestToken {
+    TestToken(sign_with(&TEST_SIGNING_KEY, &first_party_claims()))
+}
+
+fn first_party_claims() -> Value {
+    json!({
+        "iss": TEST_ISS,
+        "aud": TEST_AUD,
+        "azp": "swiyu-issuer-web-bff",
+        "iat": 1_700_000_000_i64,
+        "exp": 9_999_999_999_i64,
+        "principal_type": "first-party",
+    })
+}
+
 fn tenant_claims(tenant_id: &TenantId) -> Value {
     json!({
         "iss": TEST_ISS,
