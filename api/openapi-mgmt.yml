@@ -1057,6 +1057,308 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
 
+  # ---------------------------------------------------------------------------
+  # User management
+  #
+  # Tenant-scoped endpoints authenticate with a `principal_type = tenant` token
+  # (or the first-party BFF acting for a tenant). The two first-party endpoints
+  # (`.../accept`, `/linked-user-accounts`) require a `principal_type =
+  # first-party` token instead — noted in their descriptions.
+  # ---------------------------------------------------------------------------
+
+  /api/v1/user-accounts:
+    post:
+      summary: Provision a user account
+      description: |
+        Provisions a user account for the calling tenant. Synchronous — unlike
+        issuer creation there is no operation task to poll. Tenant scoping comes
+        from the bearer token; the body never carries a `tenant_id`. Every
+        provisioning field is optional.
+      operationId: createUserAccount
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateUserAccountRequest'
+      responses:
+        '201':
+          description: User account provisioned.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateUserAccountResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+    get:
+      summary: List user accounts
+      description: |
+        Lists the tenant's user accounts, newest first. Cursor-paginated by
+        `(created_at DESC, id DESC)`; `next_cursor` is `null` on the last page.
+      operationId: listUserAccounts
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          description: Page size, 1..=100. Default 25.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 25
+        - name: cursor
+          in: query
+          required: false
+          description: |
+            Opaque cursor returned as `next_cursor` from the previous page.
+            Omit to fetch the first page. Clients must not parse or construct
+            cursors; the server rejects anything it did not emit.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Page of user accounts.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListUserAccountsResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/v1/user-accounts/{user_account_id}:
+    get:
+      summary: Fetch a user account
+      operationId: getUserAccount
+      parameters:
+        - $ref: '#/components/parameters/UserAccountId'
+      responses:
+        '200':
+          description: User account found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserAccountResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      summary: Update provisioning attributes
+      description: |
+        Updates the provisioning attributes. A provided field replaces the
+        stored value; an omitted (or blank) field is left unchanged. The IDP
+        names (`idp_*`) are sourced from the user's token and are not editable.
+      operationId: patchUserAccount
+      parameters:
+        - $ref: '#/components/parameters/UserAccountId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchUserAccountRequest'
+      responses:
+        '200':
+          description: Updated user account.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserAccountResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/user-accounts/{user_account_id}/activate:
+    post:
+      summary: Activate a user account
+      operationId: activateUserAccount
+      parameters:
+        - $ref: '#/components/parameters/UserAccountId'
+      responses:
+        '200':
+          description: User account activated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserAccountResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/user-accounts/{user_account_id}/deactivate:
+    post:
+      summary: Deactivate a user account
+      description: A deactivated account cannot be used by its linked user.
+      operationId: deactivateUserAccount
+      parameters:
+        - $ref: '#/components/parameters/UserAccountId'
+      responses:
+        '200':
+          description: User account deactivated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserAccountResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/user-accounts/{user_account_id}/invitations:
+    post:
+      summary: Create an invitation
+      description: |
+        Creates an invitation for the account and returns the link to hand to
+        the user. The link embeds the bare single-use code, exposed only here.
+        Returns 409 if the account is already linked, or if a live pending
+        invitation already exists for it.
+      operationId: createInvitation
+      parameters:
+        - $ref: '#/components/parameters/UserAccountId'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateInvitationRequest'
+      responses:
+        '201':
+          description: Invitation created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateInvitationResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+    get:
+      summary: List an account's invitations
+      description: |
+        Lists invitations issued for the account, newest first. Cursor-paginated.
+      operationId: listInvitations
+      parameters:
+        - $ref: '#/components/parameters/UserAccountId'
+        - name: limit
+          in: query
+          required: false
+          description: Page size, 1..=100. Default 25.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 25
+        - name: cursor
+          in: query
+          required: false
+          description: |
+            Opaque cursor returned as `next_cursor` from the previous page.
+            Omit to fetch the first page.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Page of invitations.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListInvitationsResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/invitations/{invitation_id}/revoke:
+    post:
+      summary: Revoke a pending invitation
+      description: |
+        Revokes a pending invitation. Returns 409 if it is not pending (already
+        accepted, revoked, or observably expired).
+      operationId: revokeInvitation
+      parameters:
+        - $ref: '#/components/parameters/InvitationId'
+      responses:
+        '200':
+          description: Invitation revoked.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvitationResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /api/v1/invitations/{invitation_id}/accept:
+    post:
+      summary: Redeem an invitation (link an identity)
+      description: |
+        **First-party endpoint.** Requires a `principal_type = first-party`
+        token (the `swiyu-issuer-web` BFF), not a tenant token; the tenant is
+        derived from the invitation, not the token. Links the supplied,
+        freshly-authenticated user identity to the account the invitation was
+        issued for.
+      operationId: acceptInvitation
+      parameters:
+        - $ref: '#/components/parameters/InvitationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AcceptInvitationRequest'
+      responses:
+        '200':
+          description: Identity linked; returns the now-linked account.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserAccountResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /api/v1/linked-user-accounts:
+    get:
+      summary: Resolve an identity to its linked accounts
+      description: |
+        **First-party endpoint.** Requires a `principal_type = first-party`
+        token (the `swiyu-issuer-web` BFF), not a tenant token. Lists the
+        accounts linked to the given user identity, across tenants; each item
+        names its owning tenant. Unpaginated — an identity links to few accounts.
+      operationId: resolveLinkedUserAccounts
+      parameters:
+        - name: iss
+          in: query
+          required: true
+          description: Identity provider — the `iss` claim of the user's token.
+          schema:
+            type: string
+        - name: sub
+          in: query
+          required: true
+          description: Subject at that provider — the `sub` claim.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Accounts linked to the identity (possibly empty).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LinkedUserAccountsResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
 components:
   securitySchemes:
     OAuth2:
@@ -1116,6 +1418,26 @@ components:
       in: path
       required: true
       description: Bare base58 credential-type identifier (no `ctype_` prefix).
+      schema:
+        type: string
+        pattern: '^[1-9A-HJ-NP-Za-km-z]{1,32}$'
+        example: 9hXq2vRtL8pK7f
+
+    UserAccountId:
+      name: user_account_id
+      in: path
+      required: true
+      description: Bare base58 user-account identifier (no `account_` prefix).
+      schema:
+        type: string
+        pattern: '^[1-9A-HJ-NP-Za-km-z]{1,32}$'
+        example: 9hXq2vRtL8pK7f
+
+    InvitationId:
+      name: invitation_id
+      in: path
+      required: true
+      description: Bare base58 invitation identifier (no `invite_` prefix).
       schema:
         type: string
         pattern: '^[1-9A-HJ-NP-Za-km-z]{1,32}$'
@@ -1790,3 +2112,217 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/GetCredentialTypeResponse'
+
+    # -------------------------------------------------------------------------
+    # User management
+    # -------------------------------------------------------------------------
+
+    CreateUserAccountRequest:
+      type: object
+      additionalProperties: false
+      description: All fields optional — the provisioning party supplies what it knows.
+      properties:
+        provisioning_first_name:
+          type: string
+          maxLength: 255
+        provisioning_last_name:
+          type: string
+          maxLength: 255
+        provisioning_home_organization:
+          type: string
+          maxLength: 255
+          description: |
+            The user's home organization (e.g. the SWITCH edu-ID
+            `swissEduPersonHomeOrganization`), distinct from the tenant.
+
+    CreateUserAccountResponse:
+      type: object
+      required: [user_account_id]
+      properties:
+        user_account_id:
+          type: string
+          example: 9hXq2vRtL8pK7f
+
+    PatchUserAccountRequest:
+      type: object
+      additionalProperties: false
+      description: |
+        A provided field replaces the stored value; an omitted (or blank) field
+        is left unchanged.
+      properties:
+        provisioning_first_name:
+          type: string
+          maxLength: 255
+        provisioning_last_name:
+          type: string
+          maxLength: 255
+        provisioning_home_organization:
+          type: string
+          maxLength: 255
+
+    UserIdentityResponse:
+      type: object
+      required: [iss, sub]
+      properties:
+        iss:
+          type: string
+          description: Identity provider — the `iss` claim of the user's token.
+        sub:
+          type: string
+          description: Subject at that provider — the `sub` claim.
+
+    UserAccountResponse:
+      type: object
+      required: [id, tenant_id, state, created_at]
+      properties:
+        id:
+          type: string
+          example: 9hXq2vRtL8pK7f
+        tenant_id:
+          type: string
+          description: |
+            Owning tenant (bare id). Always present, including in cross-tenant
+            resolution results.
+          example: 9hXq2vRtL8pK7f
+        provisioning_first_name:
+          type: [string, "null"]
+        provisioning_last_name:
+          type: [string, "null"]
+        provisioning_home_organization:
+          type: [string, "null"]
+        state:
+          type: string
+          enum: [active, deactivated]
+        identity:
+          description: The linked user identity, or `null` when provisioned-but-unlinked.
+          oneOf:
+            - $ref: '#/components/schemas/UserIdentityResponse'
+            - type: "null"
+        idp_first_name:
+          type: [string, "null"]
+          description: First name the IDP asserts for the linked identity.
+        idp_last_name:
+          type: [string, "null"]
+        linked_at:
+          type: [string, "null"]
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+
+    ListUserAccountsResponse:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/UserAccountResponse'
+        next_cursor:
+          type: [string, "null"]
+          description: Opaque cursor for the next page; `null` on the last page.
+
+    CreateInvitationRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        expires_in_seconds:
+          type: integer
+          minimum: 3600
+          maximum: 2592000
+          default: 604800
+          description: |
+            Invitation lifetime in seconds, 3600..=2592000 (1 hour to 30 days).
+            Default 604800 (7 days). Out-of-range values are rejected.
+
+    CreateInvitationResponse:
+      type: object
+      required: [invitation_id, invitation_link, expires_at]
+      properties:
+        invitation_id:
+          type: string
+          example: 9hXq2vRtL8pK7f
+        invitation_link:
+          type: string
+          description: |
+            Link to hand to the user, embedding the bare single-use code —
+            exposed only here.
+          example: 'https://web.example/invitations/accept?invitation=9hXq2vRtL8pK7f&code=3mVq8s2pK7fLxT'
+        expires_at:
+          type: string
+          format: date-time
+
+    InvitationResponse:
+      type: object
+      required: [id, state, expires_at, created_at]
+      properties:
+        id:
+          type: string
+          example: 9hXq2vRtL8pK7f
+        state:
+          type: string
+          enum: [pending, accepted, revoked, expired]
+          description: |
+            Observed state: a stored-`pending` invitation past `expires_at` is
+            reported as `expired`.
+        expires_at:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+        accepted_at:
+          type: [string, "null"]
+          format: date-time
+        revoked_at:
+          type: [string, "null"]
+          format: date-time
+
+    ListInvitationsResponse:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/InvitationResponse'
+        next_cursor:
+          type: [string, "null"]
+          description: Opaque cursor for the next page; `null` on the last page.
+
+    AcceptInvitationRequest:
+      type: object
+      additionalProperties: false
+      required: [code, iss, sub]
+      description: |
+        Carries the bare `code` from the invitation link plus the asserted
+        `(iss, sub)`. The server resolves the invitation by the code's hash and
+        requires it to match the `invitation_id` in the path. Rejected with 409
+        if the invitation is no longer pending, the account is already linked, or
+        the identity is already linked to another account in the tenant.
+      properties:
+        code:
+          type: string
+          description: The bare single-use code from the invitation link.
+        iss:
+          type: string
+          description: |
+            Identity provider — the `iss` of the user identity, asserted by the
+            BFF from the OIDC login.
+        sub:
+          type: string
+          description: Subject at that provider — the `sub`, asserted by the BFF.
+        idp_first_name:
+          type: string
+          description: Optional first name the IDP asserts for the identity.
+        idp_last_name:
+          type: string
+
+    LinkedUserAccountsResponse:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/UserAccountResponse'
