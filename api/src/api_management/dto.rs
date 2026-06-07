@@ -368,3 +368,148 @@ pub struct AssignmentResponse {
 pub struct ListAssignedCredentialTypesResponse {
     pub items: Vec<GetCredentialTypeResponse>,
 }
+
+// ============================================================================
+// User management
+// ============================================================================
+
+/// Request body for `POST /api/v1/user-accounts`.
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CreateUserAccountRequest {
+    pub provisioning_first_name: Option<String>,
+    pub provisioning_last_name: Option<String>,
+    pub provisioning_home_organization: Option<String>,
+}
+
+/// Response body returned by `POST /api/v1/user-accounts` (HTTP 201).
+#[derive(Debug, Serialize)]
+pub struct CreateUserAccountResponse {
+    pub user_account_id: String,
+}
+
+/// Request body for `PATCH /api/v1/user-accounts/{id}`. A provided field
+/// replaces the stored value; an omitted field is left unchanged.
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PatchUserAccountRequest {
+    pub provisioning_first_name: Option<String>,
+    pub provisioning_last_name: Option<String>,
+    pub provisioning_home_organization: Option<String>,
+}
+
+/// A linked user identity on the wire.
+#[derive(Debug, Serialize)]
+pub struct UserIdentityResponse {
+    pub iss: String,
+    pub sub: String,
+}
+
+/// A user account as returned by the get / list / resolve endpoints. Carries
+/// `tenant_id` so the cross-tenant resolution caller can tell accounts apart.
+#[derive(Debug, Serialize)]
+pub struct UserAccountResponse {
+    pub id: String,
+    pub tenant_id: String,
+    pub provisioning_first_name: Option<String>,
+    pub provisioning_last_name: Option<String>,
+    pub provisioning_home_organization: Option<String>,
+    /// Lifecycle state: `"active"` or `"deactivated"`.
+    pub state: String,
+    /// The linked user identity, or `null` when provisioned-but-unlinked.
+    pub identity: Option<UserIdentityResponse>,
+    /// Names the IDP asserts for the linked identity (may be `null`).
+    pub idp_first_name: Option<String>,
+    pub idp_last_name: Option<String>,
+    pub linked_at: Option<DateTime<Utc>>,
+    pub created_at: DateTime<Utc>,
+}
+
+/// Query parameters for `GET /api/v1/user-accounts`.
+#[derive(Debug, Deserialize)]
+pub struct ListUserAccountsQuery {
+    pub limit: Option<u32>,
+    pub cursor: Option<String>,
+}
+
+/// Response body for `GET /api/v1/user-accounts`.
+#[derive(Debug, Serialize)]
+pub struct ListUserAccountsResponse {
+    pub items: Vec<UserAccountResponse>,
+    pub next_cursor: Option<String>,
+}
+
+/// Request body for `POST /api/v1/user-accounts/{id}/invitations`.
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CreateInvitationRequest {
+    /// Invitation lifetime in seconds. A configured default applies when
+    /// omitted; out-of-range values are rejected.
+    pub expires_in_seconds: Option<u32>,
+}
+
+/// Response body for `POST /api/v1/user-accounts/{id}/invitations` (HTTP 201).
+#[derive(Debug, Serialize)]
+pub struct CreateInvitationResponse {
+    pub invitation_id: String,
+    /// Link to hand to the user. Embeds the **bare** invitation code, exposed
+    /// only here.
+    pub invitation_link: String,
+    pub expires_at: DateTime<Utc>,
+}
+
+/// A single invitation on the wire (never carries the code).
+#[derive(Debug, Serialize)]
+pub struct InvitationResponse {
+    pub id: String,
+    /// Observed state: a stored-`pending` row past `expires_at` surfaces as
+    /// `"expired"` without a database update.
+    pub state: String,
+    pub expires_at: DateTime<Utc>,
+    pub created_at: DateTime<Utc>,
+    pub accepted_at: Option<DateTime<Utc>>,
+    pub revoked_at: Option<DateTime<Utc>>,
+}
+
+/// Query parameters for `GET /api/v1/user-accounts/{id}/invitations`.
+#[derive(Debug, Deserialize)]
+pub struct ListInvitationsQuery {
+    pub limit: Option<u32>,
+    pub cursor: Option<String>,
+}
+
+/// Response body for `GET /api/v1/user-accounts/{id}/invitations`.
+#[derive(Debug, Serialize)]
+pub struct ListInvitationsResponse {
+    pub items: Vec<InvitationResponse>,
+    pub next_cursor: Option<String>,
+}
+
+/// Request body for `POST /api/v1/invitations/{invitation_id}/accept`.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AcceptInvitationRequest {
+    /// The bare value from the invitation link.
+    pub code: String,
+    /// `iss` of the user identity, asserted by the BFF from the OIDC login.
+    pub iss: String,
+    /// `sub` of the user identity, asserted by the BFF from the OIDC login.
+    pub sub: String,
+    pub idp_first_name: Option<String>,
+    pub idp_last_name: Option<String>,
+}
+
+/// Query parameters for `GET /api/v1/linked-user-accounts`.
+#[derive(Debug, Deserialize)]
+pub struct ResolveLinkedAccountsQuery {
+    pub iss: String,
+    pub sub: String,
+}
+
+/// Response body for `GET /api/v1/linked-user-accounts`. Spans tenants; each
+/// item names its owning tenant. Unpaginated — an identity links to few
+/// accounts.
+#[derive(Debug, Serialize)]
+pub struct LinkedUserAccountsResponse {
+    pub items: Vec<UserAccountResponse>,
+}

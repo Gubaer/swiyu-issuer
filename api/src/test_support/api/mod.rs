@@ -5,7 +5,7 @@ use sqlx::PgPool;
 use crate::api_management::{AppState, Config};
 use crate::domain::TenantId;
 use crate::test_support::api::tokens::{TestToken, mint_test_token, test_token_validator};
-use crate::test_support::fixtures::SAMPLE_BASE_URL;
+use crate::test_support::fixtures::{SAMPLE_BASE_URL, SAMPLE_WEB_BASE_URL};
 use crate::test_support::persistence::tenants::insert_test_tenant;
 
 pub mod tokens;
@@ -17,6 +17,7 @@ pub fn build_state(pool: PgPool) -> AppState {
         pool,
         Config {
             issuer_base_url: SAMPLE_BASE_URL.into(),
+            web_base_url: SAMPLE_WEB_BASE_URL.into(),
         },
     )
     .with_jwt_validator(Some(Arc::new(test_token_validator())))

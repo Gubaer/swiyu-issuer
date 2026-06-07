@@ -8,11 +8,10 @@ use super::helpers::map_database_error;
 
 pub use super::ListPage;
 
-/// Projection for the [`Invitation`] domain struct. `invitation_code_hash` is
-/// deliberately excluded — it is write-only, matched directly by the redeem
-/// query and never surfaced.
-const COLUMNS: &str = "id, user_account_id, tenant_id, state, \
-     expires_at, created_at, accepted_at, revoked_at";
+// The SELECT projection (`id, user_account_id, tenant_id, state, expires_at,
+// created_at, accepted_at, revoked_at`) is repeated inline in each query, as the
+// other persistence modules do. `invitation_code_hash` is deliberately excluded:
+// it is write-only, matched directly by the redeem query and never surfaced.
 
 /// Inserts a fresh `pending` invitation together with the hash of its code.
 ///
@@ -49,6 +48,26 @@ pub async fn insert(
     Ok(())
 }
 
+/// Loads an invitation by id, unscoped. The caller (e.g. the revoke handler)
+/// checks tenant ownership against the returned row's `tenant_id`.
+pub async fn find_by_id(
+    conn: &mut PgConnection,
+    id: &InvitationId,
+) -> Result<Option<Invitation>, PersistenceError> {
+    sqlx::query_as::<_, Invitation>(
+        r#"
+        SELECT id, user_account_id, tenant_id, state,
+               expires_at, created_at, accepted_at, revoked_at
+        FROM user_account_invitations
+        WHERE id = $1
+        "#,
+    )
+    .bind(id)
+    .fetch_optional(conn)
+    .await
+    .map_err(PersistenceError::from)
+}
+
 /// Redeem lookup: the invitation whose stored hash matches the presented code's
 /// hash. The hash is globally unique while populated, so this is not
 /// tenant-scoped — the caller derives the tenant from the returned row. Expiry
@@ -58,9 +77,14 @@ pub async fn find_by_code_hash(
     conn: &mut PgConnection,
     code_hash: &InvitationCodeHash,
 ) -> Result<Option<Invitation>, PersistenceError> {
-    sqlx::query_as::<_, Invitation>(&format!(
-        "SELECT {COLUMNS} FROM user_account_invitations WHERE invitation_code_hash = $1"
-    ))
+    sqlx::query_as::<_, Invitation>(
+        r#"
+        SELECT id, user_account_id, tenant_id, state,
+               expires_at, created_at, accepted_at, revoked_at
+        FROM user_account_invitations
+        WHERE invitation_code_hash = $1
+        "#,
+    )
     .bind(code_hash)
     .fetch_optional(conn)
     .await
@@ -90,17 +114,18 @@ pub async fn list_by_account(
     };
     let limit_plus_one = i64::from(query.limit) + 1;
 
-    let mut invitations = sqlx::query_as::<_, Invitation>(&format!(
+    let mut invitations = sqlx::query_as::<_, Invitation>(
         r#"
-        SELECT {COLUMNS}
+        SELECT id, user_account_id, tenant_id, state,
+               expires_at, created_at, accepted_at, revoked_at
         FROM user_account_invitations
         WHERE tenant_id = $1
           AND user_account_id = $2
           AND ($3::TIMESTAMPTZ IS NULL OR (created_at, id) < ($3, $4))
         ORDER BY created_at DESC, id DESC
         LIMIT $5
-        "#
-    ))
+        "#,
+    )
     .bind(tenant_id)
     .bind(user_account_id)
     .bind(cursor_created_at)

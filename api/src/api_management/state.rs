@@ -13,6 +13,12 @@ pub struct Config {
     /// server, which need not share this binary's port. See
     /// [`resolve_oidc_public_url`][crate::config::resolve_oidc_public_url].
     pub issuer_base_url: String,
+
+    /// Public base URL of the `swiyu-issuer-web` front end, used to build the
+    /// invitation link handed to a user. Distinct from `issuer_base_url` (the
+    /// wallet-facing host): this is where the human opens the invitation and
+    /// authenticates. Sourced from `ISSUER_WEB_BASE_URL`.
+    pub web_base_url: String,
 }
 
 #[derive(Clone)]

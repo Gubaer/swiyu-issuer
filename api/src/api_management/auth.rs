@@ -6,7 +6,7 @@ use sqlx::Postgres;
 use sqlx::pool::PoolConnection;
 use sqlx::postgres::PgConnection;
 
-use crate::domain::{IssuerId, TenantId};
+use crate::domain::{IssuerId, TenantId, UserAccountId};
 use crate::persistence;
 
 use super::AppState;
@@ -16,12 +16,13 @@ use super::token_validator::{Principal, TokenError};
 const BEARER_PREFIX: &str = "Bearer ";
 
 /// Header a `first-party` caller uses to name the target tenant when acting
-/// administratively on a tenant's behalf (subaspect 7). Honored **only** for
-/// first-party tokens — a `tenant` principal derives its tenant from the token,
-/// so this is never consulted there and a stray or forged header is inert.
+/// administratively on a tenant's behalf (subaspect 7). The `TenantContext`
+/// extractor reads it **only** on the `first-party` branch; for a `tenant` token
+/// it takes the tenant from the claim and never looks at this header, so a stray
+/// or forged `X-Tenant` on such a request has no effect.
 const X_TENANT_HEADER: &str = "x-tenant";
 
-/// A request authenticated as operating within a single tenant. Satisfied by a
+/// Request extractor yielding the tenant a request is scoped to. Satisfied by a
 /// `tenant` token (the tenant comes from the token) or by a `first-party` token
 /// that names the tenant in an `X-Tenant` header.
 pub struct TenantContext {
@@ -55,12 +56,9 @@ impl FromRequestParts<AppState> for TenantContext {
     }
 }
 
-/// A request authenticated as the trusted first-party caller (the BFF), bound to
-/// no tenant — for the cross-tenant resolution endpoint. A `tenant` token is
-/// rejected here.
-// Wired into routes in Stage 4 (the `GET /linked-user-accounts` resolution and
-// `POST /invitations/{id}/accept` linking handlers); unused until then.
-#[allow(dead_code)]
+/// Request extractor asserting the caller is the trusted first-party BFF (a
+/// `first-party` token); carries no tenant — for the cross-tenant resolution and
+/// invitation-linking endpoints.
 pub struct FirstPartyContext;
 
 impl FromRequestParts<AppState> for FirstPartyContext {
@@ -72,6 +70,7 @@ impl FromRequestParts<AppState> for FirstPartyContext {
     ) -> Result<Self, Self::Rejection> {
         match authenticate(parts, state).await? {
             Principal::FirstParty => Ok(FirstPartyContext),
+            // A `tenant` token is the wrong principal for these endpoints.
             Principal::Tenant(_) => {
                 tracing::debug!("auth: first-party principal required, got tenant");
                 Err(ApiError::Unauthorised)
@@ -187,6 +186,23 @@ pub async fn require_issuer_owned_by_tenant(
     } else {
         Err(ApiError::NotFound)
     }
+}
+
+/// Verifies that `user_account_id` exists and belongs to `tenant_id`, mirroring
+/// [`require_issuer_owned_by_tenant`]. "Wrong tenant" and "no such account"
+/// collapse to the same [`ApiError::NotFound`] so a caller cannot probe for
+/// accounts outside its tenant. Used by the invitation handlers under
+/// `/user-accounts/{user_account_id}/invitations`: they confirm the account in
+/// the URL belongs to the tenant before listing or creating its invitations.
+pub async fn require_user_account_owned_by_tenant(
+    conn: &mut PgConnection,
+    tenant_id: &TenantId,
+    user_account_id: &UserAccountId,
+) -> Result<(), ApiError> {
+    let Some(_) = persistence::user_accounts::get(conn, tenant_id, user_account_id).await? else {
+        return Err(ApiError::NotFound);
+    };
+    Ok(())
 }
 
 /// Acquires a pool connection and verifies issuer ownership before

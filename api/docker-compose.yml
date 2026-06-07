@@ -310,6 +310,9 @@ services:
       # Wallet-facing OIDC base baked into offer deeplinks. A host URL,
       # not an in-container hostname: the wallet runs on the host.
       ISSUER_OIDC_HTTP_URL: ${ISSUER_OIDC_HTTP_URL:-http://localhost:8081}
+      # Public swiyu-issuer-web front end, baked into invitation links. A host
+      # URL the user's browser opens.
+      ISSUER_WEB_BASE_URL: ${ISSUER_WEB_BASE_URL:-http://localhost:3000}
       SIGNING_ENGINE: ${SIGNING_ENGINE:-vault}
       VAULT_ADDR: http://vault:8200
       VAULT_TOKEN: ${VAULT_DEV_ROOT_TOKEN_ID:-dev-only-root}

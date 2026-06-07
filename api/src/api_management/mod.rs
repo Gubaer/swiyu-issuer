@@ -4,17 +4,20 @@ mod credential_types;
 mod cursor;
 mod dto;
 mod error;
+mod invitations;
 mod issued_credentials;
 mod issuers;
+mod linking;
 mod operation_tasks;
 mod state;
 mod token_validator;
+mod user_accounts;
 
 pub use error::ApiError;
 pub use state::{AppState, Config};
 pub use token_validator::{Principal, TokenError, TokenValidator};
 
-use crate::domain::{CredentialTypeId, IssuerId};
+use crate::domain::{CredentialTypeId, InvitationId, IssuerId, UserAccountId};
 
 use axum::Router;
 use axum::extract::State;
@@ -107,6 +110,37 @@ pub fn router(state: AppState) -> Router {
             "/api/v1/issuers/{issuer_id}/credential-types/{credential_type_id}",
             post(credential_types::assign).delete(credential_types::unassign),
         )
+        // User management (tenant-scoped)
+        .route(
+            "/api/v1/user-accounts",
+            post(user_accounts::create).get(user_accounts::list),
+        )
+        .route(
+            "/api/v1/user-accounts/{user_account_id}",
+            get(user_accounts::get).patch(user_accounts::patch),
+        )
+        .route(
+            "/api/v1/user-accounts/{user_account_id}/activate",
+            post(user_accounts::activate),
+        )
+        .route(
+            "/api/v1/user-accounts/{user_account_id}/deactivate",
+            post(user_accounts::deactivate),
+        )
+        .route(
+            "/api/v1/user-accounts/{user_account_id}/invitations",
+            post(invitations::create).get(invitations::list),
+        )
+        .route(
+            "/api/v1/invitations/{invitation_id}/revoke",
+            post(invitations::revoke),
+        )
+        // Linking + resolution (first-party / BFF)
+        .route(
+            "/api/v1/invitations/{invitation_id}/accept",
+            post(linking::accept),
+        )
+        .route("/api/v1/linked-user-accounts", get(linking::resolve))
         .layer(tower_http::trace::TraceLayer::new_for_http())
         .with_state(state)
 }
@@ -144,6 +178,18 @@ fn parse_issuer_id(raw: &str) -> Result<IssuerId, ApiError> {
 fn parse_credential_type_id(raw: &str) -> Result<CredentialTypeId, ApiError> {
     CredentialTypeId::from_bare(raw).map_err(|err| ApiError::InvalidInput {
         details: format!("credential_type_id path parameter: {err}"),
+    })
+}
+
+fn parse_user_account_id(raw: &str) -> Result<UserAccountId, ApiError> {
+    UserAccountId::from_bare(raw).map_err(|err| ApiError::InvalidInput {
+        details: format!("user_account_id path parameter: {err}"),
+    })
+}
+
+fn parse_invitation_id(raw: &str) -> Result<InvitationId, ApiError> {
+    InvitationId::from_bare(raw).map_err(|err| ApiError::InvalidInput {
+        details: format!("invitation_id path parameter: {err}"),
     })
 }
 

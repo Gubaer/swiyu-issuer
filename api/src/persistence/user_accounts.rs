@@ -8,12 +8,9 @@ use super::helpers::map_database_error;
 
 pub use super::ListPage;
 
-/// The full projection the [`UserAccount`] `FromRow` needs — including the two
-/// `identity_*` columns it assembles into `Option<UserIdentity>`.
-const COLUMNS: &str = "id, tenant_id, \
-     provisioning_first_name, provisioning_last_name, provisioning_home_organization, \
-     state, identity_iss, identity_sub, idp_first_name, idp_last_name, \
-     linked_at, created_at";
+// The SELECT projection is repeated inline in each query, as the other
+// persistence modules do. It must include the two `identity_*` columns the
+// [`UserAccount`] `FromRow` assembles into `Option<UserIdentity>`.
 
 pub async fn insert(
     conn: &mut PgConnection,
@@ -55,9 +52,16 @@ pub async fn get(
     tenant_id: &TenantId,
     id: &UserAccountId,
 ) -> Result<Option<UserAccount>, PersistenceError> {
-    sqlx::query_as::<_, UserAccount>(&format!(
-        "SELECT {COLUMNS} FROM user_accounts WHERE id = $1 AND tenant_id = $2"
-    ))
+    sqlx::query_as::<_, UserAccount>(
+        r#"
+        SELECT id, tenant_id,
+               provisioning_first_name, provisioning_last_name, provisioning_home_organization,
+               state, identity_iss, identity_sub, idp_first_name, idp_last_name,
+               linked_at, created_at
+        FROM user_accounts
+        WHERE id = $1 AND tenant_id = $2
+        "#,
+    )
     .bind(id)
     .bind(tenant_id)
     .fetch_optional(conn)
@@ -215,16 +219,19 @@ pub async fn list_by_tenant(
     };
     let limit_plus_one = i64::from(query.limit) + 1;
 
-    let mut accounts = sqlx::query_as::<_, UserAccount>(&format!(
+    let mut accounts = sqlx::query_as::<_, UserAccount>(
         r#"
-        SELECT {COLUMNS}
+        SELECT id, tenant_id,
+               provisioning_first_name, provisioning_last_name, provisioning_home_organization,
+               state, identity_iss, identity_sub, idp_first_name, idp_last_name,
+               linked_at, created_at
         FROM user_accounts
         WHERE tenant_id = $1
           AND ($2::TIMESTAMPTZ IS NULL OR (created_at, id) < ($2, $3))
         ORDER BY created_at DESC, id DESC
         LIMIT $4
-        "#
-    ))
+        "#,
+    )
     .bind(tenant_id)
     .bind(cursor_created_at)
     .bind(cursor_id.as_deref())
@@ -250,14 +257,17 @@ pub async fn list_by_identity(
     conn: &mut PgConnection,
     identity: &UserIdentity,
 ) -> Result<Vec<UserAccount>, PersistenceError> {
-    sqlx::query_as::<_, UserAccount>(&format!(
+    sqlx::query_as::<_, UserAccount>(
         r#"
-        SELECT {COLUMNS}
+        SELECT id, tenant_id,
+               provisioning_first_name, provisioning_last_name, provisioning_home_organization,
+               state, identity_iss, identity_sub, idp_first_name, idp_last_name,
+               linked_at, created_at
         FROM user_accounts
         WHERE identity_iss = $1 AND identity_sub = $2
         ORDER BY created_at DESC, id DESC
-        "#
-    ))
+        "#,
+    )
     .bind(identity.iss.as_str())
     .bind(identity.sub.as_str())
     .fetch_all(conn)

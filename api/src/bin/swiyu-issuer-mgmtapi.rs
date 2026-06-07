@@ -53,6 +53,12 @@ async fn serve() -> Result<(), Box<dyn std::error::Error>> {
         env::var("ISSUER_OIDC_HTTP_URL").ok(),
         env::var("ISSUER_BASE_URL").ok(),
     );
+    // Public URL of the swiyu-issuer-web front end, embedded in invitation
+    // links. Distinct from the wallet-facing hosts above.
+    let web_base_url = env::var("ISSUER_WEB_BASE_URL")
+        .ok()
+        .filter(|v| !v.trim().is_empty())
+        .unwrap_or_else(|| "http://localhost:3000".to_string());
     let registry_url = env::var("SWIYU_IDENTIFIER_REGISTRY_URL")
         .map_err(|_| "SWIYU_IDENTIFIER_REGISTRY_URL must be set")?;
     let status_registry_url = env::var("SWIYU_STATUS_REGISTRY_URL")
@@ -67,8 +73,14 @@ async fn serve() -> Result<(), Box<dyn std::error::Error>> {
     persistence::run_migrations(&pool).await?;
 
     let jwt_validator = build_jwt_validator()?;
-    let state =
-        AppState::new(pool.clone(), Config { issuer_base_url }).with_jwt_validator(jwt_validator);
+    let state = AppState::new(
+        pool.clone(),
+        Config {
+            issuer_base_url,
+            web_base_url,
+        },
+    )
+    .with_jwt_validator(jwt_validator);
     let app = router(state);
 
     let registry_client = IdentifierRegistryClient::new(registry_url)?;

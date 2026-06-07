@@ -315,7 +315,7 @@ enum JwksError {
 
 /// The kind of principal a validated token represents, classified on its
 /// `principal_type` claim. This establishes *who* is calling and how the
-/// request's tenant is derived — not what they may do (authorization is flat 
+/// request's tenant is derived — not what they may do (authorization is flat
 /// for the time being).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Principal {
