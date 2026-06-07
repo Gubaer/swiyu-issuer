@@ -16,6 +16,7 @@ use swiyu_issuer::domain::{
 use swiyu_issuer::persistence;
 use swiyu_issuer::test_support::api::authenticated_app_state;
 use swiyu_issuer::test_support::api::tokens::mint_first_party_token;
+use swiyu_issuer::test_support::fixtures::SAMPLE_IDP_ISS;
 use swiyu_issuer::test_support::http::{get_request, post_request_json, read_body};
 use swiyu_issuer::test_support::persistence::user_accounts::test_identity;
 
@@ -66,13 +67,13 @@ async fn accept_links_identity(pool: PgPool) {
         .oneshot(post_request_json(
             &format!("/api/v1/invitations/{invitation_id}/accept"),
             Some(&first_party.as_wire()),
-            json!({ "code": code, "iss": "https://idp.test", "sub": "user-1" }),
+            json!({ "code": code, "iss": SAMPLE_IDP_ISS, "sub": "user-1" }),
         ))
         .await
         .expect("router should serve the request");
     assert_eq!(response.status(), StatusCode::OK);
     let body = read_body(response).await;
-    assert_eq!(body["identity"]["iss"], "https://idp.test");
+    assert_eq!(body["identity"]["iss"], SAMPLE_IDP_ISS);
     assert_eq!(body["identity"]["sub"], "user-1");
 
     // The account row is now linked.
@@ -99,7 +100,7 @@ async fn accept_with_tenant_token_is_unauthorised(pool: PgPool) {
         .oneshot(post_request_json(
             &format!("/api/v1/invitations/{invitation_id}/accept"),
             Some(&tenant_secret.as_wire()),
-            json!({ "code": code, "iss": "https://idp.test", "sub": "user-1" }),
+            json!({ "code": code, "iss": SAMPLE_IDP_ISS, "sub": "user-1" }),
         ))
         .await
         .expect("router should serve the request");
@@ -117,7 +118,7 @@ async fn accept_with_wrong_code_is_not_found(pool: PgPool) {
         .oneshot(post_request_json(
             &format!("/api/v1/invitations/{invitation_id}/accept"),
             Some(&first_party.as_wire()),
-            json!({ "code": "wrongcode", "iss": "https://idp.test", "sub": "user-1" }),
+            json!({ "code": "wrongcode", "iss": SAMPLE_IDP_ISS, "sub": "user-1" }),
         ))
         .await
         .expect("router should serve the request");
@@ -161,7 +162,7 @@ async fn accept_of_expired_invitation_is_conflict(pool: PgPool) {
         .oneshot(post_request_json(
             &format!("/api/v1/invitations/{}/accept", invitation.id.bare()),
             Some(&first_party.as_wire()),
-            json!({ "code": code.as_str(), "iss": "https://idp.test", "sub": "user-1" }),
+            json!({ "code": code.as_str(), "iss": SAMPLE_IDP_ISS, "sub": "user-1" }),
         ))
         .await
         .expect("router should serve the request");
@@ -192,7 +193,7 @@ async fn resolve_returns_linked_accounts(pool: PgPool) {
     .expect("link_identity should succeed");
 
     let query =
-        serde_urlencoded::to_string([("iss", "https://idp.test"), ("sub", "user-1")]).unwrap();
+        serde_urlencoded::to_string([("iss", SAMPLE_IDP_ISS), ("sub", "user-1")]).unwrap();
     let first_party = mint_first_party_token();
     let response = app
         .oneshot(get_request(
@@ -214,7 +215,7 @@ async fn resolve_with_tenant_token_is_unauthorised(pool: PgPool) {
     let app = router(state);
 
     let query =
-        serde_urlencoded::to_string([("iss", "https://idp.test"), ("sub", "user-1")]).unwrap();
+        serde_urlencoded::to_string([("iss", SAMPLE_IDP_ISS), ("sub", "user-1")]).unwrap();
     let response = app
         .oneshot(get_request(
             &format!("/api/v1/linked-user-accounts?{query}"),

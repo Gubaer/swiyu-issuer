@@ -20,7 +20,7 @@ use chrono::{DateTime, Utc};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::domain::TenantId;
+use crate::domain::{TenantId, UserIdentity};
 
 /// Only EdDSA is accepted: the realm signs with Ed25519, and pinning the
 /// algorithm here means the token header cannot talk us into a different
@@ -163,7 +163,7 @@ impl TokenValidator {
     ) -> Result<TenantId, TokenError> {
         match self.validate(token, now).await? {
             Principal::Tenant(tenant_id) => Ok(tenant_id),
-            Principal::FirstParty => {
+            Principal::FirstParty(_) => {
                 tracing::debug!("auth(jwt): tenant principal required, got first-party");
                 Err(TokenError::Invalid)
             }
@@ -284,11 +284,57 @@ fn validate_claims(
             })?;
             Ok(Principal::Tenant(tenant_id))
         }
-        // A first-party token carries no tenant; the request supplies one where
-        // needed (`X-Tenant` or a path resource), handled by the extractors.
-        PRINCIPAL_TYPE_FIRST_PARTY => Ok(Principal::FirstParty),
+        PRINCIPAL_TYPE_FIRST_PARTY => classify_first_party(payload),
         other => {
             tracing::debug!(principal_type = %other, "auth(jwt): unsupported principal_type");
+            Err(TokenError::Invalid)
+        }
+    }
+}
+
+/// Distinguishes the two `first-party` token shapes (subaspects 5/7 vs 6).
+///
+/// A token-exchanged (act-as-user) token carries **both** an `act` claim (naming
+/// the actor) and a `user_identity` claim (the federated identity); a plain
+/// client-credentials token carries neither. Exactly one present is malformed.
+fn classify_first_party(payload: &Value) -> Result<Principal, TokenError> {
+    match (payload.get("act"), payload.get("user_identity")) {
+        // A first-party token carries no tenant; the request supplies one where
+        // needed (`X-Tenant` or a path resource), handled by the extractors.
+        (None, None) => Ok(Principal::FirstParty(FirstParty::Administrative)),
+        (Some(act), Some(user_identity)) => {
+            // The actor must be named, but `act.sub` is not pinned to a specific
+            // client id: the realm signature plus `principal_type = first-party`
+            // already establish that only the BFF can present this token. Pinning
+            // it to the configured BFF client is a deferred defence-in-depth
+            // hardening (needs that id threaded in as config).
+            let act_named = act
+                .get("sub")
+                .and_then(Value::as_str)
+                .is_some_and(|s| !s.is_empty());
+            if !act_named {
+                tracing::debug!("auth(jwt): exchanged first-party token without `act.sub`");
+                return Err(TokenError::Invalid);
+            }
+            let iss = user_identity.get("iss").and_then(Value::as_str);
+            let sub = user_identity.get("sub").and_then(Value::as_str);
+            match (iss, sub) {
+                (Some(iss), Some(sub)) if !iss.is_empty() && !sub.is_empty() => Ok(
+                    Principal::FirstParty(FirstParty::ActingAsUser(UserIdentity {
+                        iss: iss.to_string(),
+                        sub: sub.to_string(),
+                    })),
+                ),
+                _ => {
+                    tracing::debug!("auth(jwt): `user_identity` claim missing `iss`/`sub`");
+                    Err(TokenError::Invalid)
+                }
+            }
+        }
+        _ => {
+            tracing::debug!(
+                "auth(jwt): first-party token carries exactly one of `act` / `user_identity`"
+            );
             Err(TokenError::Invalid)
         }
     }
@@ -321,10 +367,23 @@ enum JwksError {
 pub enum Principal {
     /// A tenant-bound caller (subaspect 4). Carries the tenant from `tenant_id`.
     Tenant(TenantId),
-    /// The trusted first-party caller — the `swiyu-issuer-web` BFF (subaspects 5
-    /// and 7). Carries no tenant; where one is needed it comes from the request
-    /// (an `X-Tenant` header or a path resource), never from the token.
-    FirstParty,
+    /// The trusted first-party caller — the `swiyu-issuer-web` BFF. The variant
+    /// distinguishes a plain client-credentials token from a token-exchanged one.
+    FirstParty(FirstParty),
+}
+
+/// The two shapes a `first-party` token takes, told apart by the token itself
+/// (not a client id) — see `aspect-authn.md`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FirstParty {
+    /// Plain client-credentials token: the BFF acting administratively
+    /// (resolution / linking / tenant-admin via `X-Tenant`) — subaspects 5 and 7.
+    /// Carries no tenant; where one is needed it comes from the request.
+    Administrative,
+    /// Token-exchanged token (RFC 8693): the BFF acting as a logged-in user
+    /// (subaspect 6). Carries the federated user identity from the `user_identity`
+    /// claim, cryptographically established by the realm rather than asserted.
+    ActingAsUser(UserIdentity),
 }
 
 #[derive(Deserialize)]
@@ -507,6 +566,7 @@ impl JwksCache {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::fixtures::SAMPLE_IDP_ISS;
 
     const ISS: &str = "https://kc.example/realms/swiyu-issuer";
     const AUD: &str = "swiyu-issuer-mgmtapi";
@@ -577,13 +637,60 @@ mod tests {
         assert_eq!(validate(&claims), Err(TokenError::Invalid));
     }
 
+    fn first_party_claims() -> Value {
+        json!({
+            "iss": ISS,
+            "aud": AUD,
+            "exp": NOW + 300,
+            "principal_type": "first-party",
+        })
+    }
+
     #[test]
-    fn accepts_first_party_principal_type() {
-        let mut claims = base_claims();
-        claims["principal_type"] = json!("first-party");
-        // A first-party token carries no tenant; `tenant_id` is not read.
-        claims.as_object_mut().unwrap().remove("tenant_id");
-        assert_eq!(validate(&claims), Ok(Principal::FirstParty));
+    fn plain_first_party_is_administrative() {
+        // No tenant, no act / user_identity → administrative.
+        assert_eq!(
+            validate(&first_party_claims()),
+            Ok(Principal::FirstParty(FirstParty::Administrative))
+        );
+    }
+
+    #[test]
+    fn exchanged_first_party_is_acting_as_user() {
+        let mut claims = first_party_claims();
+        claims["act"] = json!({ "sub": "swiyu-issuer-web-bff" });
+        claims["user_identity"] = json!({ "iss": SAMPLE_IDP_ISS, "sub": "u1" });
+        assert_eq!(
+            validate(&claims),
+            Ok(Principal::FirstParty(FirstParty::ActingAsUser(
+                UserIdentity {
+                    iss: SAMPLE_IDP_ISS.to_string(),
+                    sub: "u1".to_string(),
+                }
+            )))
+        );
+    }
+
+    #[test]
+    fn rejects_first_party_with_act_but_no_user_identity() {
+        let mut claims = first_party_claims();
+        claims["act"] = json!({ "sub": "swiyu-issuer-web-bff" });
+        assert_eq!(validate(&claims), Err(TokenError::Invalid));
+    }
+
+    #[test]
+    fn rejects_first_party_with_user_identity_but_no_act() {
+        let mut claims = first_party_claims();
+        claims["user_identity"] = json!({ "iss": SAMPLE_IDP_ISS, "sub": "u1" });
+        assert_eq!(validate(&claims), Err(TokenError::Invalid));
+    }
+
+    #[test]
+    fn rejects_exchanged_first_party_without_act_sub() {
+        let mut claims = first_party_claims();
+        claims["act"] = json!({});
+        claims["user_identity"] = json!({ "iss": SAMPLE_IDP_ISS, "sub": "u1" });
+        assert_eq!(validate(&claims), Err(TokenError::Invalid));
     }
 
     #[test]

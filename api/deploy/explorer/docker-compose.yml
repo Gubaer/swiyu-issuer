@@ -244,6 +244,38 @@ services:
       - ensure-dev-issuer-from-env
     restart: "no"
 
+  # Seed one Active, linked user account in the dev tenant so the
+  # act-as-user login path has something to resolve against.
+  # `swiyu-issuer-cli tenant ensure-dev-user-from-env` looks up the
+  # tenant by DEV_TENANT_PARTNER_ID and links an account to the fixed
+  # dev identity the Keycloak `dev-user` carries through token exchange
+  # (the (iss, sub) pair is hardcoded in cli::tenant and must match the
+  # `act-as-user` client scope in the realm). Idempotent.
+  #
+  # DB-only: it needs neither Keycloak nor the mgmtapi worker, only the
+  # dev tenant to exist — hence it depends solely on bootstrap-dev-tenant.
+  bootstrap-dev-user:
+    image: ghcr.io/gubaer/swiyu-issuer-cli:${IMAGE_TAG:-swiyu-beta}
+    container_name: swiyu-issuer-bootstrap-dev-user
+    depends_on:
+      postgres:
+        condition: service_healthy
+      bootstrap-dev-tenant:
+        condition: service_completed_successfully
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-swiyu_issuer}:${POSTGRES_PASSWORD:-swiyu_issuer}@postgres:5432/${POSTGRES_DB:-swiyu_issuer}
+      DEV_TENANT_PARTNER_ID: ${DEV_TENANT_PARTNER_ID:-}
+      # Optional overrides; defaults match the `act-as-user` scope and `dev-user`
+      # id in api/deploy/keycloak/realm/swiyu-issuer-realm.json. Change both sides
+      # together — the realm import does not read env.
+      DEV_USER_IDENTITY_ISS: ${DEV_USER_IDENTITY_ISS:-http://localhost:8083/realms/swiyu-issuer}
+      DEV_USER_IDENTITY_SUB: ${DEV_USER_IDENTITY_SUB:-11111111-1111-4111-8111-111111111111}
+      RUST_LOG: ${RUST_LOG:-info,swiyu_issuer=debug}
+    command:
+      - tenant
+      - ensure-dev-user-from-env
+    restart: "no"
+
   # The swiyu-issuer-mgmtapi management API. SWIYU_IDENTIFIER_REGISTRY_URL,
   # SWIYU_STATUS_REGISTRY_URL, and SWIYU_TOKEN_URL come from .env; the
   # in-container hostnames for Postgres and Vault are forced here

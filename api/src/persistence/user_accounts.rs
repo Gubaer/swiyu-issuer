@@ -69,6 +69,33 @@ pub async fn get(
     .map_err(PersistenceError::from)
 }
 
+/// Cross-tenant fetch used by the act-as-user auth path: the account with this
+/// id, only if it is linked to `identity`. The identity (not a tenant) scopes the
+/// lookup; `Ok(None)` covers "no such account", "unlinked", and "linked to a
+/// different identity" alike, so the caller cannot distinguish them.
+pub async fn get_by_id_and_identity(
+    conn: &mut PgConnection,
+    id: &UserAccountId,
+    identity: &UserIdentity,
+) -> Result<Option<UserAccount>, PersistenceError> {
+    sqlx::query_as::<_, UserAccount>(
+        r#"
+        SELECT id, tenant_id,
+               provisioning_first_name, provisioning_last_name, provisioning_home_organization,
+               state, identity_iss, identity_sub, idp_first_name, idp_last_name,
+               linked_at, created_at
+        FROM user_accounts
+        WHERE id = $1 AND identity_iss = $2 AND identity_sub = $3
+        "#,
+    )
+    .bind(id)
+    .bind(identity.iss.as_str())
+    .bind(identity.sub.as_str())
+    .fetch_optional(conn)
+    .await
+    .map_err(PersistenceError::from)
+}
+
 /// Overwrites the three `provisioning_*` columns (the `idp_*` names are sourced
 /// from the IDP token and are not editable here). Merge semantics, if any, are
 /// the handler's concern. `NotFound` if no row matches `(id, tenant_id)`.

@@ -3,11 +3,12 @@ use sqlx::PgPool;
 
 use crate::domain::{TenantId, UserAccount, UserAccountId, UserAccountState, UserIdentity};
 use crate::persistence;
+use crate::test_support::fixtures::SAMPLE_IDP_ISS;
 
 /// A sample user identity with a fixed test `iss` and the given `sub`.
 pub fn test_identity(sub: &str) -> UserIdentity {
     UserIdentity {
-        iss: "https://idp.test".to_string(),
+        iss: SAMPLE_IDP_ISS.to_string(),
         sub: sub.to_string(),
     }
 }

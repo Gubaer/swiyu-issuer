@@ -84,6 +84,24 @@ fn first_party_claims() -> Value {
     })
 }
 
+/// Mints a first-party *exchanged* (act-as-user) token: `principal_type =
+/// first-party` plus an `act` claim naming the BFF and a `user_identity` claim
+/// carrying the federated `(iss, sub)`. Classifies as
+/// `Principal::FirstParty(FirstParty::ActingAsUser(..))`.
+pub fn mint_act_as_user_token(iss: &str, sub: &str) -> TestToken {
+    let claims = json!({
+        "iss": TEST_ISS,
+        "aud": TEST_AUD,
+        "azp": "swiyu-issuer-web-bff",
+        "iat": 1_700_000_000_i64,
+        "exp": 9_999_999_999_i64,
+        "principal_type": "first-party",
+        "act": { "sub": "swiyu-issuer-web-bff" },
+        "user_identity": { "iss": iss, "sub": sub },
+    });
+    TestToken(sign_with(&TEST_SIGNING_KEY, &claims))
+}
+
 fn tenant_claims(tenant_id: &TenantId) -> Value {
     json!({
         "iss": TEST_ISS,

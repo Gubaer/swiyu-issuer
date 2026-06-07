@@ -3,6 +3,9 @@ pub const SAMPLE_REGISTRY_UUID: &str = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
 pub const SAMPLE_STATUS_ENTRY_ID: &str = "11111111-2222-3333-4444-555555555555";
 pub const SAMPLE_STATUS_REGISTRY_URL: &str = "https://status-reg.test/lists/abc.jwt";
 pub const SAMPLE_HOLDER_KEY_JKT: &str = "abcDEF0123456789abcDEF0123456789abcDEF01234";
+/// Issuer (`iss`) of the federated external IdP that the BFF acts-as-user on
+/// behalf of. Used in user-account identities and act-as-user token claims.
+pub const SAMPLE_IDP_ISS: &str = "https://idp.test";
 pub const SAMPLE_BASE_URL: &str = "http://localhost:8080";
 pub const SAMPLE_WEB_BASE_URL: &str = "https://web.example.test";
 pub const SAMPLE_DID: &str = "did:tdw:example.com:sample-issuer";

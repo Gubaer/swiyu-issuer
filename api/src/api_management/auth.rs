@@ -6,21 +6,28 @@ use sqlx::Postgres;
 use sqlx::pool::PoolConnection;
 use sqlx::postgres::PgConnection;
 
-use crate::domain::{IssuerId, TenantId, UserAccountId};
+use crate::domain::{IssuerId, TenantId, UserAccountId, UserAccountState, UserIdentity};
 use crate::persistence;
 
 use super::AppState;
 use super::error::ApiError;
-use super::token_validator::{Principal, TokenError};
+use super::token_validator::{FirstParty, Principal, TokenError};
 
 const BEARER_PREFIX: &str = "Bearer ";
 
 /// Header a `first-party` caller uses to name the target tenant when acting
-/// administratively on a tenant's behalf (subaspect 7). The `TenantContext`
+/// administratively on a tenant's behalf. The `TenantContext`
 /// extractor reads it **only** on the `first-party` branch; for a `tenant` token
 /// it takes the tenant from the claim and never looks at this header, so a stray
 /// or forged `X-Tenant` on such a request has no effect.
 const X_TENANT_HEADER: &str = "x-tenant";
+
+/// Header naming the user account a `first-party` act-as-user caller has selected.
+/// The `TenantContext` extractor reads it **only** on the act-as-user branch; any
+/// other token (a `tenant` token, or an administrative `first-party` token) never
+/// looks at it, so a stray or forged `X-User-Account` on such a request has no
+/// effect. Carries the bare account id (as responses and paths use).
+const X_USER_ACCOUNT_HEADER: &str = "x-user-account";
 
 /// Request extractor yielding the tenant a request is scoped to. Satisfied by a
 /// `tenant` token (the tenant comes from the token) or by a `first-party` token
@@ -46,10 +53,17 @@ impl FromRequestParts<AppState> for TenantContext {
             // The BFF acting administratively for a tenant names it explicitly in
             // `X-Tenant` (read only on this first-party branch). The caller is
             // authenticated but named a tenant that does not exist → 404.
-            Principal::FirstParty => {
+            Principal::FirstParty(FirstParty::Administrative) => {
                 let tenant_id = require_x_tenant(parts)?;
                 require_tenant_exists(state, &tenant_id, ApiError::NotFound).await?;
                 tenant_id
+            }
+            // Act-as-user (subaspect 6): the selected account arrives out-of-band
+            // in `X-User-Account` and must be linked to the token's
+            // cryptographically-established identity; the tenant is the verified
+            // account's owner.
+            Principal::FirstParty(FirstParty::ActingAsUser(identity)) => {
+                derive_tenant_for_acting_user(parts, state, &identity).await?
             }
         };
         Ok(TenantContext { tenant_id })
@@ -69,7 +83,8 @@ impl FromRequestParts<AppState> for FirstPartyContext {
         state: &AppState,
     ) -> Result<Self, Self::Rejection> {
         match authenticate(parts, state).await? {
-            Principal::FirstParty => Ok(FirstPartyContext),
+            // Either first-party shape (administrative or act-as-user) is the BFF.
+            Principal::FirstParty(_) => Ok(FirstPartyContext),
             // A `tenant` token is the wrong principal for these endpoints.
             Principal::Tenant(_) => {
                 tracing::debug!("auth: first-party principal required, got tenant");
@@ -107,17 +122,65 @@ fn require_x_tenant(parts: &Parts) -> Result<TenantId, ApiError> {
             details: "X-Tenant header is required for this request".to_string(),
         }
     })?;
-    let value = header.to_str().map_err(|_| {
-        tracing::debug!("auth: X-Tenant header is not valid UTF-8");
+    let value = header.to_str().map_err(|err| {
+        tracing::debug!(header = ?header, error = %err, "auth: X-Tenant header is not valid UTF-8");
         ApiError::InvalidInput {
             details: "X-Tenant header is not valid UTF-8".to_string(),
         }
     })?;
     value.parse::<TenantId>().map_err(|err| {
-        tracing::debug!(error = %err, "auth: X-Tenant is not a valid tenant id");
+        tracing::debug!(value, error = %err, "auth: X-Tenant is not a valid tenant id");
         ApiError::InvalidInput {
             details: format!("X-Tenant header is not a valid tenant id: {err}"),
         }
+    })
+}
+
+/// The tenant an act-as-user request (subaspect 6) is scoped to: the owner of
+/// the `X-User-Account` the caller selected, verified against the token's
+/// identity.
+///
+/// Every failure collapses to the same opaque `401`, so a caller cannot probe
+/// account existence or linkage.
+async fn derive_tenant_for_acting_user(
+    parts: &Parts,
+    state: &AppState,
+    identity: &UserIdentity,
+) -> Result<TenantId, ApiError> {
+    let account_id = require_x_user_account(parts)?;
+    let mut conn = state
+        .pool
+        .acquire()
+        .await
+        .map_err(|err| ApiError::Internal(Box::new(err)))?;
+    let account =
+        persistence::user_accounts::get_by_id_and_identity(&mut conn, &account_id, identity)
+            .await?
+            .filter(|account| account.state == UserAccountState::Active)
+            .ok_or_else(|| {
+                tracing::debug!(
+                    "auth: X-User-Account not linked to the token identity, or deactivated"
+                );
+                ApiError::Unauthorised
+            })?;
+    Ok(account.tenant_id)
+}
+
+/// Reads and parses the bare `X-User-Account` header into a [`UserAccountId`].
+/// Absence or a malformed value is the same opaque `401` as a verification
+/// failure (see [`derive_tenant_for_acting_user`]).
+fn require_x_user_account(parts: &Parts) -> Result<UserAccountId, ApiError> {
+    let header = parts.headers.get(X_USER_ACCOUNT_HEADER).ok_or_else(|| {
+        tracing::debug!("auth: act-as-user token without X-User-Account header");
+        ApiError::Unauthorised
+    })?;
+    let value = header.to_str().map_err(|err| {
+        tracing::debug!(header = ?header, error = %err, "auth: X-User-Account header is not valid UTF-8");
+        ApiError::Unauthorised
+    })?;
+    UserAccountId::from_bare(value).map_err(|err| {
+        tracing::debug!(value, error = %err, "auth: X-User-Account is not a valid user account id");
+        ApiError::Unauthorised
     })
 }
 

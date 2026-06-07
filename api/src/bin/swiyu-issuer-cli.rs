@@ -116,6 +116,13 @@ enum TenantCommand {
     /// the mgmtapi service to be healthy. Designed for the docker
     /// `bootstrap-dev-issuer` sidecar.
     EnsureDevIssuerFromEnv,
+    /// Seed (idempotently) one Active, linked user account in the dev
+    /// tenant (looked up by `DEV_TENANT_PARTNER_ID`), linked to the fixed
+    /// dev identity that the Keycloak `dev-user` carries through token
+    /// exchange. Gives the act-as-user login path an account to resolve
+    /// against. DB-only; needs neither Keycloak nor the mgmtapi worker.
+    /// Designed for the docker `bootstrap-dev-user` sidecar.
+    EnsureDevUserFromEnv,
     /// Upsert the tenant's `tenant_id` claim mapper on a Keycloak client
     /// (default `dev-ba`) over the Admin API, so that client's access
     /// tokens carry `tenant_id`. Idempotent. Authenticates as the
@@ -281,6 +288,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             TenantCommand::Update(args) => update_tenant(args).await,
             TenantCommand::BootstrapDevFromEnv(args) => bootstrap_dev_from_env(args).await,
             TenantCommand::EnsureDevIssuerFromEnv => ensure_dev_issuer_from_env().await,
+            TenantCommand::EnsureDevUserFromEnv => ensure_dev_user_from_env().await,
             TenantCommand::SyncKeycloakMapper(args) => sync_keycloak_mapper(args).await,
             TenantCommand::ImportOauthRefreshToken(args) => import_oauth_refresh_token(args).await,
             TenantCommand::SetOauthCredentials(args) => set_oauth_credentials(args).await,
@@ -408,6 +416,28 @@ async fn ensure_dev_issuer_from_env() -> Result<(), Box<dyn std::error::Error>> 
         }
         cli::tenant::EnsureDevIssuerOutcome::Provisioned { issuer_id, task_id } => {
             eprintln!("ensure-dev-issuer: provisioned issuer {issuer_id} via task {task_id}",);
+        }
+    }
+
+    Ok(())
+}
+
+async fn ensure_dev_user_from_env() -> Result<(), Box<dyn std::error::Error>> {
+    let args = cli::tenant::parse_dev_user_args(|k| env::var(k).ok())?;
+
+    let database_url = env::var("DATABASE_URL").map_err(|_| "DATABASE_URL must be set")?;
+    let pool: PgPool = persistence::connect(&database_url).await?;
+    persistence::run_migrations(&pool).await?;
+
+    let outcome = cli::tenant::ensure_dev_user_account_from_env(&pool, args).await?;
+    match outcome {
+        cli::tenant::EnsureDevUserAccountOutcome::AlreadyLinked { account_id } => {
+            eprintln!(
+                "ensure-dev-user: account {account_id} already linked to the dev identity; nothing to do",
+            );
+        }
+        cli::tenant::EnsureDevUserAccountOutcome::Created { account_id } => {
+            eprintln!("ensure-dev-user: created and linked dev user account {account_id}");
         }
     }
 

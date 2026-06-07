@@ -15,7 +15,7 @@ mod user_accounts;
 
 pub use error::ApiError;
 pub use state::{AppState, Config};
-pub use token_validator::{Principal, TokenError, TokenValidator};
+pub use token_validator::{FirstParty, Principal, TokenError, TokenValidator};
 
 use crate::domain::{CredentialTypeId, InvitationId, IssuerId, UserAccountId};
 

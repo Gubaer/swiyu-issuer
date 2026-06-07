@@ -7,7 +7,8 @@ use uuid::Uuid;
 use crate::domain::secret_encryption_engine::AnySecretEncryptionEngine;
 use crate::domain::{
     CredentialType, IssuerCredentialTypeAssignment, IssuerId, IssuerState, OperationTask,
-    RevocationMode, TaskId, TaskState, TaskType, TenantId,
+    RevocationMode, TaskId, TaskState, TaskType, TenantId, UserAccount, UserAccountId,
+    UserAccountState, UserIdentity,
 };
 use crate::persistence::credential_types::StructuredUpdate;
 use crate::persistence::issuers::ListPageQuery as IssuersListPageQuery;
@@ -20,6 +21,21 @@ use crate::persistence::{self, PersistenceError};
 const DEV_DUMMY_VCT: &str = "urn:dummy:dummy-credential";
 const DEV_DUMMY_INTERNAL_DESCRIPTION: &str =
     "Auto-seeded dummy credential type for local development";
+
+// Defaults for the federated identity (`iss`, `sub`) the dev user account is
+// linked to, overridable via `DEV_USER_IDENTITY_ISS` / `DEV_USER_IDENTITY_SUB`
+// (see [`parse_dev_user_args`]). These MUST stay in lock-step with the Keycloak
+// dev realm (`api/deploy/keycloak/realm/swiyu-issuer-realm.json`):
+//   - the iss == the hardcoded `user_identity.iss` on the `act-as-user` client
+//     scope, and
+//   - the sub == the `dev-user`'s Keycloak `id` (which the scope projects into
+//     `user_identity.sub` via the `id` user property).
+// If they drift, an exchanged act-as-user token resolves to zero accounts. The
+// realm import is static JSON (no env interpolation), so overriding these via
+// env requires editing the realm too — the defaults below keep both sides
+// aligned with no configuration.
+const DEFAULT_DEV_USER_IDENTITY_ISS: &str = "http://localhost:8083/realms/swiyu-issuer";
+const DEFAULT_DEV_USER_IDENTITY_SUB: &str = "11111111-1111-4111-8111-111111111111";
 
 #[derive(Debug, thiserror::Error)]
 pub enum CreateTenantError {
@@ -821,4 +837,132 @@ async fn wait_for_task_terminal(
             }
         }
     }
+}
+
+/// Inputs to [`ensure_dev_user_account_from_env`], decoupled from env parsing
+/// so tests can construct them directly.
+#[derive(Debug)]
+pub struct EnsureDevUserArgs {
+    pub partner_id: Uuid,
+    pub identity: UserIdentity,
+}
+
+/// Parses the dev-user seed inputs. `DEV_TENANT_PARTNER_ID` is required (same
+/// source of truth as [`parse_dev_issuer_args`]); `DEV_USER_IDENTITY_ISS` /
+/// `DEV_USER_IDENTITY_SUB` are optional and fall back to
+/// [`DEFAULT_DEV_USER_IDENTITY_ISS`] / [`DEFAULT_DEV_USER_IDENTITY_SUB`] — the
+/// values baked into the dev realm. Production passes `|k| std::env::var(k).ok()`;
+/// tests pass a fixture closure. Unset and empty are both treated as absent.
+pub fn parse_dev_user_args(
+    get: impl Fn(&str) -> Option<String>,
+) -> Result<EnsureDevUserArgs, DevTenantEnvError> {
+    fn non_empty(value: Option<String>) -> Option<String> {
+        value.filter(|s| !s.is_empty())
+    }
+
+    let partner_id_str = non_empty(get("DEV_TENANT_PARTNER_ID"))
+        .ok_or(DevTenantEnvError::Missing("DEV_TENANT_PARTNER_ID"))?;
+    let partner_id = partner_id_str
+        .parse::<Uuid>()
+        .map_err(|err| DevTenantEnvError::InvalidUuid("DEV_TENANT_PARTNER_ID", err.to_string()))?;
+
+    let iss = non_empty(get("DEV_USER_IDENTITY_ISS"))
+        .unwrap_or_else(|| DEFAULT_DEV_USER_IDENTITY_ISS.to_string());
+    let sub = non_empty(get("DEV_USER_IDENTITY_SUB"))
+        .unwrap_or_else(|| DEFAULT_DEV_USER_IDENTITY_SUB.to_string());
+
+    Ok(EnsureDevUserArgs {
+        partner_id,
+        identity: UserIdentity { iss, sub },
+    })
+}
+
+/// What [`ensure_dev_user_account_from_env`] actually did.
+#[derive(Debug)]
+pub enum EnsureDevUserAccountOutcome {
+    /// An account in the dev tenant is already linked to the fixed dev identity;
+    /// nothing was created (the seed is idempotent).
+    AlreadyLinked { account_id: UserAccountId },
+    /// A fresh `Active` account was inserted and linked to the dev identity.
+    Created { account_id: UserAccountId },
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum EnsureDevUserAccountError {
+    #[error("dev tenant with partner_id {partner_id} not found; run bootstrap-dev-from-env first")]
+    TenantNotFound { partner_id: Uuid },
+    #[error(transparent)]
+    Persistence(#[from] PersistenceError),
+    #[error(transparent)]
+    Sqlx(#[from] sqlx::Error),
+}
+
+/// Seeds (idempotently) one Active, linked user account in the dev tenant so the
+/// act-as-user login path has something to resolve against. The account is
+/// linked to the fixed `(DEV_USER_IDENTITY_ISS, DEV_USER_IDENTITY_SUB)` pair —
+/// the same identity the Keycloak `dev-user` carries through token exchange (see
+/// the constants above). Without this seed, `POST /api/v1/identities/resolve`
+/// returns zero accounts for the dev user.
+///
+/// Re-running is a no-op once an account in the tenant is linked to the
+/// identity: [`AlreadyLinked`][EnsureDevUserAccountOutcome::AlreadyLinked].
+pub async fn ensure_dev_user_account_from_env(
+    pool: &PgPool,
+    args: EnsureDevUserArgs,
+) -> Result<EnsureDevUserAccountOutcome, EnsureDevUserAccountError> {
+    let EnsureDevUserArgs {
+        partner_id,
+        identity,
+    } = args;
+
+    let mut conn = pool.acquire().await?;
+
+    let tenant = persistence::tenants::find_by_partner_id(&mut conn, partner_id)
+        .await?
+        .ok_or(EnsureDevUserAccountError::TenantNotFound { partner_id })?;
+    let tenant_id = tenant.id.clone();
+
+    // Idempotency: `list_by_identity` spans all tenants, so filter to this one.
+    // A prior bootstrap run already created and linked the account.
+    let already_linked = persistence::user_accounts::list_by_identity(&mut conn, &identity)
+        .await?
+        .into_iter()
+        .find(|account| account.tenant_id == tenant_id);
+    if let Some(account) = already_linked {
+        tracing::info!(
+            tenant_id = %tenant_id,
+            account_id = %account.id,
+            "ensure-dev-user: account already linked to the dev identity; nothing to do",
+        );
+        return Ok(EnsureDevUserAccountOutcome::AlreadyLinked {
+            account_id: account.id,
+        });
+    }
+
+    // A single INSERT carrying the identity columns is the link — the
+    // `user_accounts_identity_pair` CHECK is satisfied (both set), so no
+    // separate `link_identity` step is needed for the seed.
+    let now = Utc::now();
+    let account = UserAccount {
+        id: UserAccountId::generate(),
+        tenant_id: tenant_id.clone(),
+        provisioning_first_name: Some("Dev".to_string()),
+        provisioning_last_name: Some("User".to_string()),
+        provisioning_home_organization: None,
+        state: UserAccountState::Active,
+        identity: Some(identity),
+        idp_first_name: None,
+        idp_last_name: None,
+        linked_at: Some(now),
+        created_at: now,
+    };
+    let account_id = account.id.clone();
+    persistence::user_accounts::insert(&mut conn, &account).await?;
+
+    tracing::info!(
+        tenant_id = %tenant_id,
+        account_id = %account_id,
+        "ensure-dev-user: created and linked dev user account",
+    );
+    Ok(EnsureDevUserAccountOutcome::Created { account_id })
 }
