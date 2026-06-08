@@ -8,12 +8,11 @@ import {
   viewChild,
 } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
-import { HttpErrorResponse } from '@angular/common/http';
-import { ActivatedRoute, Router } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { TranslocoPipe, TranslocoService } from '@jsverse/transloco';
 import { map } from 'rxjs';
-import { ConfirmationService, MenuItem, MessageService } from 'primeng/api';
+import { MenuItem } from 'primeng/api';
 import { AutoCompleteModule, AutoCompleteCompleteEvent } from 'primeng/autocomplete';
 import { TableModule } from 'primeng/table';
 import { TagModule } from 'primeng/tag';
@@ -26,11 +25,8 @@ import { ProgressSpinnerModule } from 'primeng/progressspinner';
 
 import { Issuer } from '../issuers/issuers-service';
 import { IssuersStore } from '../issuers/issuers-store';
-import {
-  CredentialOfferState,
-  CredentialOfferSummary,
-  CredentialOffersService,
-} from './credential-offers-service';
+import { CredentialOfferCancellation } from './credential-offer-cancellation';
+import { CredentialOfferState, CredentialOfferSummary } from './credential-offers-service';
 import { CredentialOffersStore } from './credential-offers-store';
 
 @Component({
@@ -38,6 +34,7 @@ import { CredentialOffersStore } from './credential-offers-store';
   standalone: true,
   imports: [
     FormsModule,
+    RouterLink,
     TranslocoPipe,
     AutoCompleteModule,
     TableModule,
@@ -55,12 +52,10 @@ import { CredentialOffersStore } from './credential-offers-store';
 export class CredentialOffersList {
   private readonly issuersStore = inject(IssuersStore);
   private readonly offersStore = inject(CredentialOffersStore);
-  private readonly offersService = inject(CredentialOffersService);
+  private readonly cancellation = inject(CredentialOfferCancellation);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly transloco = inject(TranslocoService);
-  private readonly confirmation = inject(ConfirmationService);
-  private readonly messages = inject(MessageService);
 
   protected readonly issuers = this.issuersStore.issuers;
   protected readonly issuersLoading = this.issuersStore.listLoading;
@@ -89,28 +84,12 @@ export class CredentialOffersList {
 
   protected readonly issuerSuggestions = signal<Issuer[]>([]);
 
-  // The row action menu is a single shared popup; `menuOffer` records which row
-  // opened it so `menuItems` can build its model (and disable Cancel) for that
-  // specific offer.
+  // The row action menu is a single shared popup. Its model is rebuilt for the
+  // clicked row in `openRowMenu` rather than via a computed: building it eagerly
+  // would call `translate()` before transloco has loaded the language file,
+  // yielding a "missing translation" for the label that never recovers.
   private readonly rowMenu = viewChild.required<Menu>('rowMenu');
-  protected readonly menuOffer = signal<CredentialOfferSummary | null>(null);
-  protected readonly menuItems = computed<MenuItem[]>(() => {
-    const offer = this.menuOffer();
-    return [
-      {
-        label: this.t('credential_offer.list.cancel'),
-        icon: 'pi pi-times',
-        // Only pending offers can be cancelled; the item stays visible but
-        // disabled otherwise.
-        disabled: offer?.state !== 'pending',
-        command: () => {
-          if (offer) {
-            this.confirmCancel(offer);
-          }
-        },
-      },
-    ];
-  });
+  protected readonly menuItems = signal<MenuItem[]>([]);
 
   constructor() {
     this.issuersStore.load();
@@ -183,54 +162,32 @@ export class CredentialOffersList {
     this.offersStore.loadMore();
   }
 
-  // Point the shared row menu at this offer, then open it under the trigger.
+  // Build the menu model for this row, then open it under the trigger. Built on
+  // click so the label is translated after the language file has loaded.
   protected openRowMenu(event: Event, offer: CredentialOfferSummary): void {
-    this.menuOffer.set(offer);
+    this.menuItems.set([
+      {
+        label: this.t('credential_offer.cancel.action'),
+        icon: 'pi pi-times',
+        // Only pending offers can be cancelled; the item stays visible but
+        // disabled otherwise.
+        disabled: offer.state !== 'pending',
+        command: () => this.confirmCancel(offer),
+      },
+    ]);
     this.rowMenu().toggle(event);
   }
 
-  // Confirm, then cancel the offer via the BFF. On success patch the row in
-  // place; on conflict (already issued/cancelled) resync from the server.
+  // Cancel the offer via the shared confirmation flow. On success patch the row
+  // in place; on conflict (already issued/cancelled) resync from the server.
   private confirmCancel(offer: CredentialOfferSummary): void {
     const issuer = this.selectedIssuer();
-    if (!issuer || offer.state !== 'pending') {
+    if (!issuer) {
       return;
     }
-    this.confirmation.confirm({
-      header: this.t('credential_offer.list.cancel_confirm_header'),
-      message: this.t('credential_offer.list.cancel_confirm_message', { id: offer.id }),
-      icon: 'pi pi-exclamation-triangle',
-      acceptButtonProps: {
-        label: this.t('credential_offer.list.cancel_confirm_accept'),
-        severity: 'danger',
-      },
-      rejectButtonProps: {
-        label: this.t('credential_offer.list.cancel_confirm_reject'),
-        severity: 'secondary',
-        outlined: true,
-      },
-      accept: () => {
-        this.offersService.cancel(issuer.id, offer.id).subscribe({
-          next: (updated) => {
-            this.offersStore.markCancelled(offer.id, updated.cancelled_at);
-            this.messages.add({
-              severity: 'success',
-              detail: this.t('credential_offer.list.cancel_success'),
-            });
-          },
-          error: (err: HttpErrorResponse) => {
-            // 409 means the offer left the pending state between render and
-            // click (e.g. it was just redeemed); refresh so the row is accurate.
-            if (err.status === 409) {
-              this.offersStore.refresh();
-            }
-            this.messages.add({
-              severity: 'error',
-              detail: this.t('credential_offer.list.cancel_error'),
-            });
-          },
-        });
-      },
+    this.cancellation.confirm(issuer.id, offer, {
+      onCancelled: (cancelledAt) => this.offersStore.markCancelled(offer.id, cancelledAt),
+      onConflict: () => this.offersStore.refresh(),
     });
   }
 

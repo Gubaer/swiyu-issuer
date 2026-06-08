@@ -19,7 +19,9 @@ export interface CredentialOfferSummary {
 }
 
 export interface CredentialOffer extends CredentialOfferSummary {
-  claims: Record<string, unknown>;
+  // Present while the offer is pending; removed from the database once the
+  // holder redeems the credential, so it may arrive null/empty.
+  claims: Record<string, unknown> | null;
 }
 
 export interface CredentialOffersResponse {

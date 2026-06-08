@@ -136,14 +136,31 @@
       "col_issued": "Ausgestellt",
       "empty": "Noch keine Credential-Angebote für diesen Aussteller.",
       "load_more": "Mehr laden",
-      "row_actions": "Zeilenaktionen",
-      "cancel": "Angebot stornieren",
-      "cancel_confirm_header": "Angebot stornieren?",
-      "cancel_confirm_message": "Das Angebot „{{id}}“ wird storniert und kann nicht mehr eingelöst werden. Dies kann nicht rückgängig gemacht werden.",
-      "cancel_confirm_accept": "Angebot stornieren",
-      "cancel_confirm_reject": "Angebot behalten",
-      "cancel_success": "Das Credential-Angebot wurde storniert.",
-      "cancel_error": "Das Credential-Angebot konnte nicht storniert werden."
+      "row_actions": "Zeilenaktionen"
+    },
+    "detail": {
+      "back": "Zurück zu den Angeboten",
+      "title": "Credential-Angebot",
+      "load_error": "Dieses Credential-Angebot konnte nicht geladen werden.",
+      "offer_id": "Angebots-ID",
+      "state": "Status",
+      "vct": "VCT",
+      "credential_type": "Credential-Typ",
+      "created": "Erstellt",
+      "expires": "Läuft ab",
+      "issued": "Ausgestellt",
+      "cancelled": "Storniert",
+      "claims_title": "Claims",
+      "claims_unavailable": "Claims sind nicht mehr verfügbar – sie werden nach der Ausstellung des Credentials aus der Datenbank entfernt."
+    },
+    "cancel": {
+      "action": "Angebot stornieren",
+      "confirm_header": "Angebot stornieren?",
+      "confirm_message": "Das Angebot „{{id}}“ wird storniert und kann nicht mehr eingelöst werden. Dies kann nicht rückgängig gemacht werden.",
+      "confirm_accept": "Angebot stornieren",
+      "confirm_reject": "Angebot behalten",
+      "success": "Das Credential-Angebot wurde storniert.",
+      "error": "Das Credential-Angebot konnte nicht storniert werden."
     }
   },
   "auth": {

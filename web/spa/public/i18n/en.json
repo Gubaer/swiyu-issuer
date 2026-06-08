@@ -136,14 +136,31 @@
       "col_issued": "Issued",
       "empty": "No credential offers for this issuer yet.",
       "load_more": "Load more",
-      "row_actions": "Row actions",
-      "cancel": "Cancel offer",
-      "cancel_confirm_header": "Cancel offer?",
-      "cancel_confirm_message": "Offer “{{id}}” will be cancelled and can no longer be redeemed. This cannot be undone.",
-      "cancel_confirm_accept": "Cancel offer",
-      "cancel_confirm_reject": "Keep offer",
-      "cancel_success": "The credential offer was cancelled.",
-      "cancel_error": "Could not cancel the credential offer."
+      "row_actions": "Row actions"
+    },
+    "detail": {
+      "back": "Back to offers",
+      "title": "Credential offer",
+      "load_error": "Failed to load this credential offer.",
+      "offer_id": "Offer ID",
+      "state": "State",
+      "vct": "VCT",
+      "credential_type": "Credential type",
+      "created": "Created",
+      "expires": "Expires",
+      "issued": "Issued",
+      "cancelled": "Cancelled",
+      "claims_title": "Claims",
+      "claims_unavailable": "Claims are no longer available — they are removed from the database once the credential is issued."
+    },
+    "cancel": {
+      "action": "Cancel offer",
+      "confirm_header": "Cancel offer?",
+      "confirm_message": "Offer “{{id}}” will be cancelled and can no longer be redeemed. This cannot be undone.",
+      "confirm_accept": "Cancel offer",
+      "confirm_reject": "Keep offer",
+      "success": "The credential offer was cancelled.",
+      "error": "Could not cancel the credential offer."
     }
   },
   "auth": {

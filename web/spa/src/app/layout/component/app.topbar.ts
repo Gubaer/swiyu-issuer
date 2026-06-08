@@ -1,4 +1,4 @@
-import { Component, computed, inject } from '@angular/core';
+import { Component, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { RouterModule } from '@angular/router';
 import { TranslocoPipe, TranslocoService } from '@jsverse/transloco';
@@ -40,7 +40,7 @@ import { Account, SessionService } from '@/app/core/session-service';
           type="button"
           class="layout-topbar-action"
           [attr.aria-label]="'topbar.account' | transloco"
-          (click)="userMenu.toggle($event)"
+          (click)="buildUserMenu(); userMenu.toggle($event)"
         >
           <span class="layout-topbar-user hidden md:inline-block">
             {{ me.selected_account.display_name }} &#64; {{ tenantLabel(me.selected_account) }}
@@ -84,10 +84,17 @@ export class AppTopbar {
   private readonly transloco = inject(TranslocoService);
 
   /** The popup-menu model: account switcher (when >1) + logout. */
-  protected readonly menuItems = computed<MenuItem[]>(() => {
+  protected readonly menuItems = signal<MenuItem[]>([]);
+
+  // Built on open rather than via a computed: a computed reading translate()
+  // re-runs only when its signal deps change, so if the session resolves before
+  // transloco loads the language file the labels stick as "missing translation".
+  // Opening the menu happens well after load, so the labels resolve correctly.
+  protected buildUserMenu(): void {
     const me = this.session.me();
     if (!me) {
-      return [];
+      this.menuItems.set([]);
+      return;
     }
 
     const items: MenuItem[] = [];
@@ -107,8 +114,8 @@ export class AppTopbar {
       icon: 'pi pi-sign-out',
       command: () => this.logout(),
     });
-    return items;
-  });
+    this.menuItems.set(items);
+  }
 
   protected tenantLabel(account: Account): string {
     return account.tenant_display_name ?? account.tenant_id;
