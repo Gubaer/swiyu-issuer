@@ -17,13 +17,10 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # This script lives at deploy/explorer/; the repo root is two levels up.
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
-ISSUER_DIR="${REPO_ROOT}/api"
 
-# The rust + keycloak images share the api crate's version; swiyu-issuer-web is
-# versioned independently, from the BFF crate.
-VERSION="$(grep -m1 '^version' "${ISSUER_DIR}/Cargo.toml" \
-    | sed -E 's/^version *= *"([^"]+)".*/\1/')"
-WEB_VERSION="$(grep -m1 '^version' "${REPO_ROOT}/web/bff/Cargo.toml" \
+# All images share one version, defined once in the workspace root Cargo.toml
+# ([workspace.package]) and inherited by the api and web/bff crates in lockstep.
+VERSION="$(grep -m1 '^version' "${REPO_ROOT}/Cargo.toml" \
     | sed -E 's/^version *= *"([^"]+)".*/\1/')"
 
 REGISTRY="${REGISTRY:-ghcr.io/gubaer}"
@@ -162,9 +159,9 @@ build_image "swiyu-issuer-keycloak" "keycloak/Dockerfile" "keycloak"
 
 # The web front end (SPA + BFF), built from web/Dockerfile with the repo root as
 # context (the cargo workspace and the SPA both live under the root). No build
-# target, and its own version (WEB_VERSION, from the BFF crate). The explorer
-# stack pulls this as ${REGISTRY}/swiyu-issuer-web.
-build_image "swiyu-issuer-web" "web/Dockerfile" "." "" "${WEB_VERSION}"
+# target, and the shared workspace ${VERSION}. The explorer stack pulls this as
+# ${REGISTRY}/swiyu-issuer-web.
+build_image "swiyu-issuer-web" "web/Dockerfile" "."
 
 if [[ "${PUSH}" -eq 1 ]]; then
     echo
