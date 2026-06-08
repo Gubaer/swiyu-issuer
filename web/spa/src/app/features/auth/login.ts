@@ -31,7 +31,12 @@ export class Login {
    * XHR) because the BFF responds with a cross-origin 302 to the realm.
    */
   protected signIn(): void {
+    window.location.href = this.loginUrl();
+  }
+
+  /** The BFF login URL carrying the validated `return_to`. */
+  protected loginUrl(): string {
     const returnTo = this.params.get('return_to') ?? '/';
-    window.location.href = `/api/auth/login?return_to=${encodeURIComponent(returnTo)}`;
+    return `/api/auth/login?return_to=${encodeURIComponent(returnTo)}`;
   }
 }
