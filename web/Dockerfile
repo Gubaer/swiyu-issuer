@@ -12,6 +12,11 @@
 #
 #   docker build -f web/Dockerfile -t swiyu-issuer-web:dev .
 
+# `RUST_TAG` is declared here, before the first FROM, so it is a *global* ARG and
+# is visible to the cargo-chef FROM below. (An ARG declared after a FROM is local
+# to that stage and cannot be referenced in a later FROM.)
+ARG RUST_TAG=latest-rust-1-bookworm
+
 # ---- SPA build ----------------------------------------------------------
 FROM node:22-bookworm-slim AS spa-builder
 WORKDIR /spa
@@ -24,7 +29,7 @@ RUN npm run build
 # ---- BFF build ----------------------------------------------------------
 # Mirrors api/Dockerfile: cargo-chef caches dependency compilation,
 # and `-bookworm` keeps the builder's glibc in sync with the slim runtime.
-ARG RUST_TAG=latest-rust-1-bookworm
+# RUST_TAG is the global ARG declared near the top (usable here directly).
 FROM lukemathwalker/cargo-chef:${RUST_TAG} AS chef
 WORKDIR /app
 
@@ -54,8 +59,10 @@ USER issuer
 EXPOSE 3000
 ENV BFF_PORT=3000 \
     SPA_DIR=/srv/spa
-# MGMTAPI_URL, MGMTAPI_TOKEN and IDENTIFIER_REGISTRY_URL must be supplied at
-# run time; they point at the separately deployed mgmtapi and registries.
+# Supplied at run time (see web/docker-compose.yml): MGMTAPI_URL, the OIDC_*
+# realm config (OIDC_ISSUER_URL / OIDC_CLIENT_ID / OIDC_CLIENT_SECRET /
+# OIDC_REDIRECT_URI / OIDC_POST_LOGOUT_REDIRECT_URI), and the SESSION_* cookie
+# settings. The BFF mints its own mgmtapi tokens, so there is no static token.
 ENTRYPOINT ["/usr/local/bin/swiyu-issuer-web-bff"]
 LABEL org.opencontainers.image.title="swiyu-issuer-web" \
       org.opencontainers.image.description="SWIYU issuer — web front end (SPA + BFF)" \

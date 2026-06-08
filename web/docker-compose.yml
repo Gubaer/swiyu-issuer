@@ -1,0 +1,76 @@
+# Runs swiyu-issuer-web (the SPA + BFF single image, see web/Dockerfile) on the
+# same network as a running swiyu-issuer backend (api/docker-compose.yml).
+#
+# Usage (run from this directory, web/):
+#   # 1) bring the backend up first
+#   docker compose -f ../api/docker-compose.yml up -d
+#   # 2) then the web front end
+#   docker compose up -d --build
+#   # open http://localhost:3000  (log in as dev-user / dev-user)
+#
+# Public issuer vs in-network back channel
+# ----------------------------------------
+# The browser reaches Keycloak at the *published* host port (localhost:8083); the
+# BFF, inside the compose network, reaches it at the *service* hostname
+# (keycloak:8080). So the BFF is given both URLs — the same split mgmtapi uses
+# (KEYCLOAK_ISSUER_URL vs KEYCLOAK_JWKS_URL):
+#   OIDC_ISSUER_URL    = http://localhost:8083/...  — browser redirect + id_token iss
+#   OIDC_INTERNAL_URL  = http://keycloak:8080/...   — BFF back channel: token, JWKS
+#
+# PREREQUISITE on the api stack (NOT changed here — this file touches web/ only):
+# Keycloak must stamp a STABLE `iss` regardless of which host the token request
+# hits. Otherwise tokens minted by the BFF over keycloak:8080 carry
+# iss=http://keycloak:8080/... and both the BFF's id_token check and mgmtapi
+# (which expects localhost:8083) reject them. Set on the keycloak service:
+#   KC_HOSTNAME=http://localhost:8083
+#   KC_HOSTNAME_BACKCHANNEL_DYNAMIC=true
+# Also: the realm `swiyu-issuer-web-bff` client must allow the :3000 redirect /
+# web-origin / post-logout URIs (already added to the realm import).
+
+name: swiyu-issuer-web
+
+services:
+  swiyu-issuer-web:
+    build:
+      # Context is the repo root: the workspace Cargo.toml/lock and the shared
+      # git-dependency crates live there (see web/Dockerfile).
+      context: ..
+      dockerfile: web/Dockerfile
+    image: swiyu-issuer-web
+    container_name: swiyu-issuer-web
+    networks:
+      - backend
+    ports:
+      - "3000:3000"
+    environment:
+      # The BFF serves the SPA from SPA_DIR and `/api` on this port.
+      BFF_PORT: 3000
+      SPA_DIR: /srv/spa
+
+      # mgmtapi over the in-network service hostname.
+      MGMTAPI_URL: ${MGMTAPI_URL:-http://swiyu-issuer-mgmtapi:8080}
+
+      # OIDC: public issuer (browser + id_token iss) vs in-network back channel.
+      OIDC_ISSUER_URL: ${OIDC_ISSUER_URL:-http://localhost:8083/realms/swiyu-issuer}
+      OIDC_INTERNAL_URL: ${OIDC_INTERNAL_URL:-http://keycloak:8080/realms/swiyu-issuer}
+      OIDC_CLIENT_ID: ${OIDC_CLIENT_ID:-swiyu-issuer-web-bff}
+      OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET:-dev-bff-secret}
+      # The redirect + post-logout URIs point at THIS container's published :3000.
+      OIDC_REDIRECT_URI: ${OIDC_REDIRECT_URI:-http://localhost:3000/api/auth/callback}
+      OIDC_POST_LOGOUT_REDIRECT_URI: ${OIDC_POST_LOGOUT_REDIRECT_URI:-http://localhost:3000/login}
+
+      # Session cookie + lifetimes. SECURE stays false on plain-HTTP dev.
+      SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-false}
+      SESSION_IDLE_TIMEOUT_SECS: ${SESSION_IDLE_TIMEOUT_SECS:-1800}
+      SESSION_ABSOLUTE_TIMEOUT_SECS: ${SESSION_ABSOLUTE_TIMEOUT_SECS:-36000}
+
+      RUST_LOG: ${RUST_LOG:-info,tower_sessions_core=error}
+    restart: unless-stopped
+
+# The backend's default compose network (project `swiyu-issuer` →
+# `swiyu-issuer_default`). Joined as external so the web container resolves
+# `keycloak` and `swiyu-issuer-mgmtapi` by service name.
+networks:
+  backend:
+    external: true
+    name: swiyu-issuer_default
