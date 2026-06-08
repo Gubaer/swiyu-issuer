@@ -126,5 +126,10 @@
       "error_unavailable": "Die Anmeldung ist vorübergehend nicht verfügbar. Bitte versuchen Sie es später erneut.",
       "error_generic": "Die Anmeldung ist fehlgeschlagen. Bitte versuchen Sie es erneut."
     }
+  },
+  "topbar": {
+    "account": "Konto",
+    "switch_account": "Konto wechseln",
+    "logout": "Abmelden"
   }
 }

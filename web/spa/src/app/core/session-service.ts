@@ -72,6 +72,11 @@ export class SessionService {
     return this.load();
   }
 
+  /** Switches the selected account on the BFF (the caller reloads afterwards). */
+  selectAccount(accountId: string): Promise<unknown> {
+    return firstValueFrom(this.http.post('/api/auth/select-account', { account_id: accountId }));
+  }
+
   /** Drops the cached session (e.g. on a mid-session `401`). */
   clear(): void {
     this._me.set(null);

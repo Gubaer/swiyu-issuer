@@ -126,5 +126,10 @@
       "error_unavailable": "Sign-in is temporarily unavailable. Please try again later.",
       "error_generic": "Sign-in failed. Please try again."
     }
+  },
+  "topbar": {
+    "account": "Account",
+    "switch_account": "Switch account",
+    "logout": "Sign out"
   }
 }
