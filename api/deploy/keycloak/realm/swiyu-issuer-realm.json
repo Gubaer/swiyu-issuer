@@ -49,7 +49,7 @@
     },
     {
       "name": "act-as-user",
-      "description": "Adds the act-as-user claims: the federated `user_identity` (iss, sub) and a hardcoded `act.sub` naming the BFF as the actor (V2 standard token exchange does not stamp `act` itself). OPTIONAL: requested only at token exchange, never on the base token — mgmtapi requires BOTH `act` and `user_identity` together, and rejects a first-party token carrying only one.",
+      "description": "Act-as-user claims, added only at token exchange: federated user_identity (iss, sub) plus a hardcoded act.sub naming the BFF (V2 exchange does not stamp act). mgmtapi requires both together.",
       "protocol": "openid-connect",
       "attributes": {
         "include.in.token.scope": "false",
@@ -167,7 +167,7 @@
     {
       "clientId": "swiyu-issuer-web-bff",
       "name": "swiyu-issuer web BFF (first-party)",
-      "description": "Trusted first-party BFF (principal_type=first-party). Standard flow runs the user OIDC login; token exchange (RFC 8693) mints the act-as-user token. The optional `act-as-user` scope (requested at exchange) adds both `user_identity` (iss, sub) and the `act.sub` actor claim — V2 standard token exchange does not stamp `act` on its own.",
+      "description": "Trusted first-party BFF (principal_type=first-party). Standard flow runs the user login; RFC 8693 token exchange mints the act-as-user token; the optional act-as-user scope adds user_identity (iss, sub) and act.sub.",
       "enabled": true,
       "protocol": "openid-connect",
       "publicClient": false,
@@ -177,12 +177,15 @@
       "implicitFlowEnabled": false,
       "directAccessGrantsEnabled": false,
       "serviceAccountsEnabled": true,
-      "redirectUris": ["http://localhost:4200/api/auth/callback"],
-      "webOrigins": ["http://localhost:4200"],
+      "redirectUris": [
+        "http://localhost:4200/api/auth/callback",
+        "http://localhost:3000/api/auth/callback"
+      ],
+      "webOrigins": ["http://localhost:4200", "http://localhost:3000"],
       "attributes": {
         "access.token.signed.response.alg": "EdDSA",
         "standard.token.exchange.enabled": "true",
-        "post.logout.redirect.uris": "http://localhost:4200/login"
+        "post.logout.redirect.uris": "http://localhost:4200/login##http://localhost:3000/login"
       },
       "defaultClientScopes": ["basic", "roles", "mgmtapi-audience"],
       "optionalClientScopes": ["act-as-user"],

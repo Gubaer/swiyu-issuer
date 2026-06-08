@@ -111,6 +111,15 @@ services:
     environment:
       KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN:-admin}
       KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
+      # Pin the frontend hostname so every token carries iss=KC_HOSTNAME
+      # regardless of which host the token request hit. Without this, a token
+      # minted over the in-network hostname (keycloak:8080) would carry
+      # iss=http://keycloak:8080/... and be rejected by callers that expect the
+      # host-facing issuer (mgmtapi's KEYCLOAK_ISSUER_URL, the BFF's id_token
+      # check). BACKCHANNEL_DYNAMIC lets the BFF still reach token/JWKS at
+      # keycloak:8080. Must match KEYCLOAK_HOST_PORT.
+      KC_HOSTNAME: ${KC_HOSTNAME:-http://localhost:8083}
+      KC_HOSTNAME_BACKCHANNEL_DYNAMIC: "true"
     ports:
       - "${KEYCLOAK_HOST_PORT:-8083}:8080"
       - "${KEYCLOAK_MGMT_HOST_PORT:-9000}:9000"
