@@ -76,6 +76,8 @@ export class JsonEditor implements OnDestroy {
   private editor?: monaco.editor.IStandaloneCodeEditor;
   private model?: monaco.editor.ITextModel;
   private disposables: monaco.IDisposable[] = [];
+  private resizeObserver?: ResizeObserver;
+  private layoutRaf = 0;
 
   constructor() {
     afterNextRender(() => this.createEditor());
@@ -95,6 +97,10 @@ export class JsonEditor implements OnDestroy {
   }
 
   ngOnDestroy(): void {
+    if (this.layoutRaf) {
+      cancelAnimationFrame(this.layoutRaf);
+    }
+    this.resizeObserver?.disconnect();
     for (const disposable of this.disposables) {
       disposable.dispose();
     }
@@ -103,16 +109,40 @@ export class JsonEditor implements OnDestroy {
   }
 
   private createEditor(): void {
+    const host = this.host().nativeElement;
     const model = monaco.editor.createModel(this.value(), 'json', monaco.Uri.parse(SCHEMA_URI));
     this.model = model;
 
-    this.editor = monaco.editor.create(this.host().nativeElement, {
+    // `automaticLayout` is deliberately OFF. Monaco's built-in version installs a
+    // ResizeObserver that calls `editor.layout()` synchronously from the observer
+    // callback; that resizes Monaco's own DOM and re-triggers the observer, which
+    // the browser reports as "ResizeObserver loop completed with undelivered
+    // notifications". In this container (a spinner→editor `@if`/`@else` swap inside
+    // a card) the loop never settled on a non-zero size and the editor painted into
+    // a zero box — a visibly blank field. We drive layout ourselves from rAF, which
+    // breaks the synchronous loop and lets the container settle before measuring.
+    this.editor = monaco.editor.create(host, {
       model,
-      automaticLayout: true,
+      automaticLayout: false,
       minimap: { enabled: false },
       scrollBeyondLastLine: false,
       tabSize: 2,
       fontSize: 13,
+    });
+
+    this.resizeObserver = new ResizeObserver(() => this.scheduleLayout());
+    this.resizeObserver.observe(host);
+
+    // First measurement: the host may still be 0×0 on the tick the editor is
+    // created (right after the spinner is replaced), so lay out on the next frame
+    // once layout has flushed.
+    this.scheduleLayout();
+
+    // The monospace web font can resolve after the editor is created; remeasure so
+    // glyph widths are correct instead of stuck at the fallback metrics.
+    document.fonts?.ready.then(() => {
+      monaco.editor.remeasureFonts();
+      this.scheduleLayout();
     });
 
     this.disposables.push(
@@ -122,6 +152,18 @@ export class JsonEditor implements OnDestroy {
 
     this.applySchema(this.schema());
     this.emitValidity();
+  }
+
+  // Coalesce layout requests into a single `editor.layout()` per frame. Running
+  // it from rAF (not synchronously) is what keeps the ResizeObserver from looping.
+  private scheduleLayout(): void {
+    if (this.layoutRaf) {
+      return;
+    }
+    this.layoutRaf = requestAnimationFrame(() => {
+      this.layoutRaf = 0;
+      this.editor?.layout();
+    });
   }
 
   private applySchema(schema: JsonSchema | null): void {
