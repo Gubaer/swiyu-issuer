@@ -6,7 +6,7 @@ use chrono::Utc;
 use openidconnect::core::{CoreClient, CoreProviderMetadata, CoreResponseType};
 use openidconnect::{
     AuthenticationFlow, AuthorizationCode, ClientId, ClientSecret, CsrfToken, IssuerUrl, Nonce,
-    OAuth2TokenResponse, PkceCodeChallenge, PkceCodeVerifier, RedirectUrl, Scope, TokenResponse,
+    OAuth2TokenResponse, PkceCodeChallenge, PkceCodeVerifier, RedirectUrl, TokenResponse,
     reqwest,
 };
 
@@ -109,6 +109,10 @@ impl OidcLoginClient {
         )
         .set_redirect_uri(self.redirect_uri.clone());
 
+        // `authorize_url` already requests `openid`; the BFF only needs the
+        // id_token's `iss`/`sub` (display data comes from the mgmtapi resolve, not
+        // IdP claims), so no further scopes are requested — and `profile`/`email`
+        // are not assigned to this client anyway.
         let (pkce_challenge, pkce_verifier) = PkceCodeChallenge::new_random_sha256();
         let (authorize_url, csrf_token, nonce) = client
             .authorize_url(
@@ -116,9 +120,6 @@ impl OidcLoginClient {
                 CsrfToken::new_random,
                 Nonce::new_random,
             )
-            .add_scope(Scope::new("openid".to_string()))
-            .add_scope(Scope::new("profile".to_string()))
-            .add_scope(Scope::new("email".to_string()))
             .set_pkce_challenge(pkce_challenge)
             .url();
 
