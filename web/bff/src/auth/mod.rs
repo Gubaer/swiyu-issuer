@@ -10,7 +10,7 @@ mod token;
 
 pub use exchange::UserTokens;
 pub use login::{LoginClientError, OidcLoginClient};
-pub use oidc::{DiscoveryError, OidcEndpoints, discover};
+pub use oidc::OidcEndpoints;
 pub use pending::PendingLogins;
 pub use session::{SESSION_DATA_KEY, SessionAccount, SessionData};
 pub use token::{FirstPartyTokenProvider, TokenError};

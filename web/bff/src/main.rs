@@ -28,8 +28,6 @@ enum StartupError {
     Config(#[from] config::ConfigError),
     #[error("http client construction failed: {0}")]
     HttpClient(#[from] reqwest::Error),
-    #[error("OIDC discovery failed: {0}")]
-    Discovery(#[from] auth::DiscoveryError),
     #[error("OIDC login client setup failed: {0}")]
     LoginClient(#[from] auth::LoginClientError),
     #[error("identifier registry client construction failed: {0}")]
@@ -48,10 +46,12 @@ async fn main() -> Result<(), StartupError> {
 
     let config = Config::from_env()?;
 
-    // Discover the realm once at startup; fail fast if it is unreachable.
-    let oidc = auth::discover(&config.oidc.issuer_url).await?;
-    let login = Arc::new(OidcLoginClient::discover(&config.oidc).await?);
-    tracing::info!(issuer = %oidc.issuer, "OIDC provider discovered");
+    // Browser-facing endpoints + `iss` come from the public issuer; back-channel
+    // endpoints (token, JWKS) come from the internal base. The login client
+    // fetches the JWKS now and fails fast if the realm is unreachable.
+    let oidc = auth::OidcEndpoints::build(&config.oidc.issuer_url, &config.oidc.internal_url);
+    let login = Arc::new(OidcLoginClient::build(&config.oidc, &oidc).await?);
+    tracing::info!(issuer = %oidc.issuer, token_endpoint = %oidc.token_endpoint, "OIDC endpoints ready");
 
     // One HTTP client shared by the token provider and the management-API client.
     let http = reqwest::Client::builder().build()?;

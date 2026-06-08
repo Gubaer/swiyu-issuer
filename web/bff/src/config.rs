@@ -26,9 +26,17 @@ pub enum ConfigError {
 /// confidential first-party client of the Keycloak realm.
 #[derive(Debug)]
 pub struct OidcConfig {
-    /// Realm issuer URL; the provider's metadata is discovered from
-    /// `{issuer}/.well-known/openid-configuration` at startup.
+    /// Public realm URL — the one the **browser** reaches Keycloak at (the
+    /// authorize redirect + single sign-out) and the `iss` the BFF verifies on
+    /// the `id_token`.
     pub issuer_url: String,
+    /// Realm URL the BFF uses for its own **back-channel** calls (discovery,
+    /// token, JWKS, refresh, RFC 8693 exchange). Defaults to `issuer_url`; in a
+    /// containerized deployment it is the in-network hostname (e.g.
+    /// `http://keycloak:8080/...`), since `issuer_url`'s host is unreachable from
+    /// inside the compose network. The container analogue of mgmtapi's
+    /// `KEYCLOAK_JWKS_URL` override.
+    pub internal_url: String,
     pub client_id: String,
     pub client_secret: String,
     /// Where the realm redirects back after the authorization-code step; must be
@@ -66,12 +74,18 @@ pub struct Config {
 
 impl Config {
     pub fn from_env() -> Result<Self, ConfigError> {
+        // `internal_url` defaults to the issuer when OIDC_INTERNAL_URL is unset,
+        // so the host-process / `ng serve` workflow is unchanged.
+        let oidc_issuer_url = required("OIDC_ISSUER_URL")?;
+        let oidc_internal_url =
+            optional_present("OIDC_INTERNAL_URL").unwrap_or_else(|| oidc_issuer_url.clone());
         Ok(Self {
             bff_port: parse_port("BFF_PORT", 3000)?,
             mgmtapi_url: required("MGMTAPI_URL")?,
             identifier_registry_url: optional("IDENTIFIER_REGISTRY_URL", ""),
             oidc: OidcConfig {
-                issuer_url: required("OIDC_ISSUER_URL")?,
+                issuer_url: oidc_issuer_url,
+                internal_url: oidc_internal_url,
                 client_id: required("OIDC_CLIENT_ID")?,
                 client_secret: required("OIDC_CLIENT_SECRET")?,
                 redirect_uri: required("OIDC_REDIRECT_URI")?,

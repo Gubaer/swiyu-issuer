@@ -133,13 +133,10 @@ pub async fn logout(State(state): State<AppState>, session: Session) -> Response
     }
 
     let post_logout = &state.config.oidc.post_logout_redirect_uri;
-    let Some(endpoint) = &state.oidc.end_session_endpoint else {
-        // No RP-initiated logout advertised: local clear only.
-        return Redirect::to(post_logout).into_response();
-    };
+    let endpoint = &state.oidc.end_session_endpoint;
     let Ok(mut url) = Url::parse(endpoint) else {
-        // Discovery handed us a malformed end_session_endpoint; degrade to a
-        // local logout. The endpoint URL is not a secret, so log it.
+        // A malformed end_session_endpoint; degrade to a local logout. The
+        // endpoint URL is not a secret, so log it.
         tracing::error!(endpoint = %endpoint, "end_session_endpoint is not a valid URL; logging out locally");
         return Redirect::to(post_logout).into_response();
     };
