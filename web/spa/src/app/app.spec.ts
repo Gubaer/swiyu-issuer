@@ -14,8 +14,8 @@ describe('App', () => {
         provideRouter([]),
         provideHttpClient(),
         provideHttpClientTesting(),
-        MessageService
-      ]
+        MessageService,
+      ],
     }).compileComponents();
   });
 

@@ -70,7 +70,11 @@ mod tests {
         }
     }
 
-    fn session(logged_in_at_unix: i64, accounts: Vec<SessionAccount>, selected: &str) -> SessionData {
+    fn session(
+        logged_in_at_unix: i64,
+        accounts: Vec<SessionAccount>,
+        selected: &str,
+    ) -> SessionData {
         SessionData {
             iss: "iss".to_string(),
             sub: "sub".to_string(),

@@ -21,9 +21,9 @@ export const appConfig: ApplicationConfig = {
         defaultLang: 'en',
         fallbackLang: 'en',
         reRenderOnLangChange: true,
-        prodMode: false
+        prodMode: false,
       },
-      loader: TranslocoHttpLoader
+      loader: TranslocoHttpLoader,
     }),
     MessageService,
     ConfirmationService,
@@ -31,9 +31,9 @@ export const appConfig: ApplicationConfig = {
       theme: {
         preset: Aura,
         options: {
-          darkModeSelector: '.app-dark'
-        }
-      }
-    })
-  ]
+          darkModeSelector: '.app-dark',
+        },
+      },
+    }),
+  ],
 };

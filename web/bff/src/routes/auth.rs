@@ -301,7 +301,10 @@ mod tests {
         assert_eq!(accounts.len(), 1);
         assert_eq!(accounts[0].id, "a1");
         assert_eq!(accounts[0].tenant_id, "t1");
-        assert_eq!(accounts[0].tenant_display_name.as_deref(), Some("SWIYU Dev"));
+        assert_eq!(
+            accounts[0].tenant_display_name.as_deref(),
+            Some("SWIYU Dev")
+        );
         assert_eq!(accounts[0].display_name, "Dev User");
     }
 
@@ -310,8 +313,10 @@ mod tests {
         assert!(active_accounts(&json!({})).is_empty());
         assert!(active_accounts(&json!({ "items": [] })).is_empty());
         assert!(
-            active_accounts(&json!({ "items": [{ "id": "a1", "tenant_id": "t1", "state": "deactivated" }] }))
-                .is_empty()
+            active_accounts(
+                &json!({ "items": [{ "id": "a1", "tenant_id": "t1", "state": "deactivated" }] })
+            )
+            .is_empty()
         );
     }
 

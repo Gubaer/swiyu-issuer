@@ -12,7 +12,7 @@ const KNOWN_ERRORS = ['no_access', 'idp', 'state', 'unavailable'];
   selector: 'app-login',
   imports: [TranslocoPipe, ButtonModule, CardModule, MessageModule],
   templateUrl: './login.html',
-  styleUrl: './login.scss'
+  styleUrl: './login.scss',
 })
 export class Login {
   private readonly params = inject(ActivatedRoute).snapshot.queryParamMap;

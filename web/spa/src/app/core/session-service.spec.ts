@@ -42,7 +42,9 @@ describe('SessionService', () => {
 
   it('treats a 401 as unauthenticated rather than erroring', async () => {
     const loaded = service.load();
-    httpMock.expectOne('/api/me').flush('Unauthorized', { status: 401, statusText: 'Unauthorized' });
+    httpMock
+      .expectOne('/api/me')
+      .flush('Unauthorized', { status: 401, statusText: 'Unauthorized' });
     await loaded;
 
     expect(service.isAuthenticated()).toBe(false);

@@ -12,10 +12,20 @@ import { Account, SessionService } from '@/app/core/session-service';
 @Component({
   selector: 'app-topbar',
   standalone: true,
-  imports: [RouterModule, CommonModule, StyleClassModule, MenuModule, TranslocoPipe, AppConfigurator],
+  imports: [
+    RouterModule,
+    CommonModule,
+    StyleClassModule,
+    MenuModule,
+    TranslocoPipe,
+    AppConfigurator,
+  ],
   template: `<div class="layout-topbar">
     <div class="layout-topbar-logo-container">
-      <button class="layout-menu-button layout-topbar-action" (click)="layoutService.onMenuToggle()">
+      <button
+        class="layout-menu-button layout-topbar-action"
+        (click)="layoutService.onMenuToggle()"
+      >
         <i class="pi pi-bars"></i>
       </button>
       <a class="layout-topbar-logo" routerLink="/">
@@ -42,7 +52,13 @@ import { Account, SessionService } from '@/app/core/session-service';
 
       <div class="layout-config-menu">
         <button type="button" class="layout-topbar-action" (click)="toggleDarkMode()">
-          <i [ngClass]="{ 'pi ': true, 'pi-moon': layoutService.isDarkTheme(), 'pi-sun': !layoutService.isDarkTheme() }"></i>
+          <i
+            [ngClass]="{
+              'pi ': true,
+              'pi-moon': layoutService.isDarkTheme(),
+              'pi-sun': !layoutService.isDarkTheme(),
+            }"
+          ></i>
         </button>
         <div class="relative">
           <button
@@ -60,7 +76,7 @@ import { Account, SessionService } from '@/app/core/session-service';
         </div>
       </div>
     </div>
-  </div>`
+  </div>`,
 })
 export class AppTopbar {
   layoutService = inject(LayoutService);
@@ -113,7 +129,7 @@ export class AppTopbar {
   toggleDarkMode() {
     this.layoutService.layoutConfig.update((state) => ({
       ...state,
-      darkTheme: !state.darkTheme
+      darkTheme: !state.darkTheme,
     }));
   }
 }
