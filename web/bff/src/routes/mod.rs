@@ -84,6 +84,10 @@ pub fn router(state: AppState) -> Router {
             get(credential_offers::get_credential_offer),
         )
         .route(
+            "/api/issuers/{issuer_id}/credential-offers/{offer_id}/cancel",
+            post(credential_offers::cancel_credential_offer),
+        )
+        .route(
             "/api/issuers/{issuer_id}/credential-types",
             get(credential_types::list_credential_types),
         )

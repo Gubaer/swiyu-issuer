@@ -1,19 +1,36 @@
-import { Component, computed, effect, inject, signal, untracked } from '@angular/core';
+import {
+  Component,
+  computed,
+  effect,
+  inject,
+  signal,
+  untracked,
+  viewChild,
+} from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
+import { HttpErrorResponse } from '@angular/common/http';
 import { ActivatedRoute, Router } from '@angular/router';
 import { FormsModule } from '@angular/forms';
+import { TranslocoPipe, TranslocoService } from '@jsverse/transloco';
 import { map } from 'rxjs';
+import { ConfirmationService, MenuItem, MessageService } from 'primeng/api';
 import { AutoCompleteModule, AutoCompleteCompleteEvent } from 'primeng/autocomplete';
 import { TableModule } from 'primeng/table';
 import { TagModule } from 'primeng/tag';
 import { ButtonModule } from 'primeng/button';
 import { TooltipModule } from 'primeng/tooltip';
 import { MessageModule } from 'primeng/message';
+import { Menu, MenuModule } from 'primeng/menu';
+import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { ProgressSpinnerModule } from 'primeng/progressspinner';
 
 import { Issuer } from '../issuers/issuers-service';
 import { IssuersStore } from '../issuers/issuers-store';
-import { CredentialOfferState, CredentialOfferSummary } from './credential-offers-service';
+import {
+  CredentialOfferState,
+  CredentialOfferSummary,
+  CredentialOffersService,
+} from './credential-offers-service';
 import { CredentialOffersStore } from './credential-offers-store';
 
 @Component({
@@ -21,12 +38,15 @@ import { CredentialOffersStore } from './credential-offers-store';
   standalone: true,
   imports: [
     FormsModule,
+    TranslocoPipe,
     AutoCompleteModule,
     TableModule,
     TagModule,
     ButtonModule,
     TooltipModule,
     MessageModule,
+    MenuModule,
+    ConfirmDialogModule,
     ProgressSpinnerModule,
   ],
   templateUrl: './credential-offers-list.html',
@@ -35,8 +55,12 @@ import { CredentialOffersStore } from './credential-offers-store';
 export class CredentialOffersList {
   private readonly issuersStore = inject(IssuersStore);
   private readonly offersStore = inject(CredentialOffersStore);
+  private readonly offersService = inject(CredentialOffersService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
+  private readonly transloco = inject(TranslocoService);
+  private readonly confirmation = inject(ConfirmationService);
+  private readonly messages = inject(MessageService);
 
   protected readonly issuers = this.issuersStore.issuers;
   protected readonly issuersLoading = this.issuersStore.listLoading;
@@ -64,6 +88,29 @@ export class CredentialOffersList {
   });
 
   protected readonly issuerSuggestions = signal<Issuer[]>([]);
+
+  // The row action menu is a single shared popup; `menuOffer` records which row
+  // opened it so `menuItems` can build its model (and disable Cancel) for that
+  // specific offer.
+  private readonly rowMenu = viewChild.required<Menu>('rowMenu');
+  protected readonly menuOffer = signal<CredentialOfferSummary | null>(null);
+  protected readonly menuItems = computed<MenuItem[]>(() => {
+    const offer = this.menuOffer();
+    return [
+      {
+        label: this.t('credential_offer.list.cancel'),
+        icon: 'pi pi-times',
+        // Only pending offers can be cancelled; the item stays visible but
+        // disabled otherwise.
+        disabled: offer?.state !== 'pending',
+        command: () => {
+          if (offer) {
+            this.confirmCancel(offer);
+          }
+        },
+      },
+    ];
+  });
 
   constructor() {
     this.issuersStore.load();
@@ -136,6 +183,57 @@ export class CredentialOffersList {
     this.offersStore.loadMore();
   }
 
+  // Point the shared row menu at this offer, then open it under the trigger.
+  protected openRowMenu(event: Event, offer: CredentialOfferSummary): void {
+    this.menuOffer.set(offer);
+    this.rowMenu().toggle(event);
+  }
+
+  // Confirm, then cancel the offer via the BFF. On success patch the row in
+  // place; on conflict (already issued/cancelled) resync from the server.
+  private confirmCancel(offer: CredentialOfferSummary): void {
+    const issuer = this.selectedIssuer();
+    if (!issuer || offer.state !== 'pending') {
+      return;
+    }
+    this.confirmation.confirm({
+      header: this.t('credential_offer.list.cancel_confirm_header'),
+      message: this.t('credential_offer.list.cancel_confirm_message', { id: offer.id }),
+      icon: 'pi pi-exclamation-triangle',
+      acceptButtonProps: {
+        label: this.t('credential_offer.list.cancel_confirm_accept'),
+        severity: 'danger',
+      },
+      rejectButtonProps: {
+        label: this.t('credential_offer.list.cancel_confirm_reject'),
+        severity: 'secondary',
+        outlined: true,
+      },
+      accept: () => {
+        this.offersService.cancel(issuer.id, offer.id).subscribe({
+          next: (updated) => {
+            this.offersStore.markCancelled(offer.id, updated.cancelled_at);
+            this.messages.add({
+              severity: 'success',
+              detail: this.t('credential_offer.list.cancel_success'),
+            });
+          },
+          error: (err: HttpErrorResponse) => {
+            // 409 means the offer left the pending state between render and
+            // click (e.g. it was just redeemed); refresh so the row is accurate.
+            if (err.status === 409) {
+              this.offersStore.refresh();
+            }
+            this.messages.add({
+              severity: 'error',
+              detail: this.t('credential_offer.list.cancel_error'),
+            });
+          },
+        });
+      },
+    });
+  }
+
   protected stateSeverity(state: CredentialOfferState): 'info' | 'success' | 'secondary' | 'warn' {
     switch (state) {
       case 'pending':
@@ -160,5 +258,9 @@ export class CredentialOffersList {
       queryParamsHandling: 'merge',
       replaceUrl,
     });
+  }
+
+  private t(key: string, params?: Record<string, unknown>): string {
+    return this.transloco.translate(key, params);
   }
 }

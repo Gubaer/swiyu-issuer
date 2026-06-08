@@ -56,6 +56,24 @@ pub async fn create_credential_offer(
     Ok((StatusCode::CREATED, Json(payload)))
 }
 
+// Cancels a pending offer and returns the updated offer summary. The upstream
+// cancel response carries the full offer including `claims`; strip it so the SPA
+// receives the same shape its table already consumes. Upstream `404`/`409`
+// (unknown offer, or an offer that is issued/already cancelled) propagate
+// through the gateway error mapping.
+pub async fn cancel_credential_offer(
+    State(state): State<AppState>,
+    auth: UserAuth,
+    Path((issuer_id, offer_id)): Path<(String, String)>,
+) -> Result<Json<Value>, AppError> {
+    let mut payload = state
+        .mgmt_api
+        .cancel_credential_offer(&auth, &issuer_id, &offer_id)
+        .await?;
+    strip_claims(&mut payload);
+    Ok(Json(payload))
+}
+
 // Drop the per-item `claims` blob from a list response so the SPA's table view
 // is not paying for a field it does not display. A malformed upstream body
 // (missing `items`, wrong shape) is left alone here — the existing gateway
@@ -65,9 +83,14 @@ fn strip_claims_from_items(payload: &mut Value) {
         return;
     };
     for item in items {
-        if let Some(obj) = item.as_object_mut() {
-            obj.remove("claims");
-        }
+        strip_claims(item);
+    }
+}
+
+// Drop `claims` from a single offer object. No-op for non-objects.
+fn strip_claims(offer: &mut Value) {
+    if let Some(obj) = offer.as_object_mut() {
+        obj.remove("claims");
     }
 }
 

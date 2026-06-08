@@ -78,4 +78,13 @@ export class CredentialOffersService {
       body,
     );
   }
+
+  // Cancels a pending offer. The BFF returns the updated offer summary
+  // (claims stripped) with `state: "cancelled"` and a `cancelled_at` stamp.
+  cancel(issuerId: string, offerId: string): Observable<CredentialOfferSummary> {
+    return this.http.post<CredentialOfferSummary>(
+      `/api/issuers/${issuerId}/credential-offers/${offerId}/cancel`,
+      {},
+    );
+  }
 }

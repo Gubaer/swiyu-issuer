@@ -95,4 +95,14 @@ export class CredentialOffersStore {
     this.errorSignal.set(null);
     this.loadingSignal.set(false);
   }
+
+  // Reflect a cancelled offer in the table without a full reload, patching the
+  // matching row's state and cancelled-at stamp in place.
+  markCancelled(offerId: string, cancelledAt: string | null): void {
+    this.itemsSignal.update((items) =>
+      items.map((offer) =>
+        offer.id === offerId ? { ...offer, state: 'cancelled', cancelled_at: cancelledAt } : offer,
+      ),
+    );
+  }
 }

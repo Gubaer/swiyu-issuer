@@ -188,6 +188,20 @@ impl MgmtApiClient {
         read_json(response).await
     }
 
+    pub async fn cancel_credential_offer(
+        &self,
+        auth: &UserAuth,
+        issuer_id: &str,
+        offer_id: &str,
+    ) -> Result<Value, CallError> {
+        let url = format!(
+            "{}/api/v1/issuers/{issuer_id}/credential-offers/{offer_id}/cancel",
+            self.base_url
+        );
+        let response = Self::act_as_user(self.http.post(&url), auth).send().await?;
+        read_json(response).await
+    }
+
     pub async fn list_credential_types(
         &self,
         auth: &UserAuth,
