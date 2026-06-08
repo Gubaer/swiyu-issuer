@@ -3526,7 +3526,7 @@ dependencies = [
 
 [[package]]
 name = "swiyu-issuer-web-bff"
-version = "0.1.1"
+version = "0.1.19"
 dependencies = [
  "axum",
  "chrono",
