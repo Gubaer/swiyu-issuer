@@ -411,6 +411,11 @@ pub struct UserIdentityResponse {
 pub struct UserAccountResponse {
     pub id: String,
     pub tenant_id: String,
+    /// The owning tenant's human-readable name (`tenants.display_name`). Present
+    /// on every response carrying an account, so the SPA can always label it by
+    /// tenant — notably the cross-tenant account picker. `null` only when the
+    /// tenant has no display name set.
+    pub tenant_display_name: Option<String>,
     pub provisioning_first_name: Option<String>,
     pub provisioning_last_name: Option<String>,
     pub provisioning_home_organization: Option<String>,

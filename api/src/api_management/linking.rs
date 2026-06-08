@@ -102,12 +102,14 @@ pub async fn accept(
     let linked = persistence::user_accounts::get(&mut tx, &invitation.tenant_id, &account.id)
         .await?
         .ok_or(ApiError::NotFound)?;
+    let tenant_display_name =
+        persistence::tenants::find_display_name(&mut tx, &invitation.tenant_id).await?;
 
     tx.commit()
         .await
         .map_err(|err| ApiError::Internal(Box::new(err)))?;
 
-    Ok(Json(user_account_to_response(linked)))
+    Ok(Json(user_account_to_response(linked, tenant_display_name)))
 }
 
 /// `GET /api/v1/linked-user-accounts?iss=…&sub=…`
@@ -129,7 +131,10 @@ pub async fn resolve(
         .await
         .map_err(|err| ApiError::Internal(Box::new(err)))?;
 
-    let accounts = persistence::user_accounts::list_by_identity(&mut conn, &identity).await?;
-    let items = accounts.into_iter().map(user_account_to_response).collect();
+    let accounts = persistence::user_accounts::resolve_linked_accounts(&mut conn, &identity).await?;
+    let items = accounts
+        .into_iter()
+        .map(|resolved| user_account_to_response(resolved.account, resolved.tenant_display_name))
+        .collect();
     Ok(Json(LinkedUserAccountsResponse { items }))
 }

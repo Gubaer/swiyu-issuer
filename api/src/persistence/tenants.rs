@@ -36,6 +36,26 @@ pub async fn find_by_id(
     Ok(tenant)
 }
 
+/// The tenant's `display_name` (may be `NULL`), without the heavier
+/// [`find_by_id`] projection — no secret columns are fetched or decrypted. Used
+/// to label user-account responses by tenant. Returns `None` when the column is
+/// `NULL` or (defensively) the row is absent.
+pub async fn find_display_name(
+    conn: &mut PgConnection,
+    tenant_id: &TenantId,
+) -> Result<Option<String>, PersistenceError> {
+    let display_name = sqlx::query_scalar::<_, Option<String>>(
+        r#"
+        SELECT display_name FROM tenants WHERE id = $1
+        "#,
+    )
+    .bind(tenant_id)
+    .fetch_optional(conn)
+    .await?;
+
+    Ok(display_name.flatten())
+}
+
 /// Existence check used at the request boundary: a validated `tenant` principal
 /// (or an `X-Tenant`-named tenant) must correspond to a real tenant row before
 /// the request is admitted. Cheaper than [`find_by_id`] — no columns fetched.

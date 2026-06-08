@@ -301,3 +301,43 @@ pub async fn list_by_identity(
     .await
     .map_err(PersistenceError::from)
 }
+
+/// A linked account paired with its owning tenant's display name — the
+/// projection the cross-tenant resolve endpoint needs so the SPA account picker
+/// can label each candidate by tenant. `tenant_display_name` is `None` when the
+/// tenant has no display name set.
+#[derive(Debug, sqlx::FromRow)]
+pub struct ResolvedAccount {
+    #[sqlx(flatten)]
+    pub account: UserAccount,
+    pub tenant_display_name: Option<String>,
+}
+
+/// Like [`list_by_identity`], but joins `tenants` to carry each account's tenant
+/// display name. Used by the cross-tenant resolve (login) endpoint, where the
+/// caller has no tenant context to label the accounts itself.
+pub async fn resolve_linked_accounts(
+    conn: &mut PgConnection,
+    identity: &UserIdentity,
+) -> Result<Vec<ResolvedAccount>, PersistenceError> {
+    sqlx::query_as::<_, ResolvedAccount>(
+        r#"
+        SELECT ua.id, ua.tenant_id,
+               ua.provisioning_first_name, ua.provisioning_last_name,
+               ua.provisioning_home_organization,
+               ua.state, ua.identity_iss, ua.identity_sub,
+               ua.idp_first_name, ua.idp_last_name,
+               ua.linked_at, ua.created_at,
+               t.display_name AS tenant_display_name
+        FROM user_accounts ua
+        JOIN tenants t ON t.id = ua.tenant_id
+        WHERE ua.identity_iss = $1 AND ua.identity_sub = $2
+        ORDER BY ua.created_at DESC, ua.id DESC
+        "#,
+    )
+    .bind(identity.iss.as_str())
+    .bind(identity.sub.as_str())
+    .fetch_all(conn)
+    .await
+    .map_err(PersistenceError::from)
+}

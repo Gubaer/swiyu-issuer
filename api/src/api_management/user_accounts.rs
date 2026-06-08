@@ -110,10 +110,12 @@ pub async fn list(
         None
     };
 
+    let tenant_display_name =
+        persistence::tenants::find_display_name(&mut conn, &tenant_context.tenant_id).await?;
     let items = page
         .items
         .into_iter()
-        .map(user_account_to_response)
+        .map(|account| user_account_to_response(account, tenant_display_name.clone()))
         .collect();
     Ok(Json(ListUserAccountsResponse { items, next_cursor }))
 }
@@ -134,7 +136,9 @@ pub async fn get(
     let account = persistence::user_accounts::get(&mut conn, &tenant_context.tenant_id, &id)
         .await?
         .ok_or(ApiError::NotFound)?;
-    Ok(Json(user_account_to_response(account)))
+    let tenant_display_name =
+        persistence::tenants::find_display_name(&mut conn, &tenant_context.tenant_id).await?;
+    Ok(Json(user_account_to_response(account, tenant_display_name)))
 }
 
 /// `PATCH /api/v1/user-accounts/{id}`
@@ -194,7 +198,9 @@ pub async fn patch(
         provisioning_home_organization,
         ..account
     };
-    Ok(Json(user_account_to_response(updated)))
+    let tenant_display_name =
+        persistence::tenants::find_display_name(&mut conn, &tenant_context.tenant_id).await?;
+    Ok(Json(user_account_to_response(updated, tenant_display_name)))
 }
 
 /// `POST /api/v1/user-accounts/{id}/activate`
@@ -241,15 +247,24 @@ async fn set_account_state(
     let account = persistence::user_accounts::get(&mut conn, &tenant_context.tenant_id, &id)
         .await?
         .ok_or(ApiError::NotFound)?;
-    Ok(Json(user_account_to_response(account)))
+    let tenant_display_name =
+        persistence::tenants::find_display_name(&mut conn, &tenant_context.tenant_id).await?;
+    Ok(Json(user_account_to_response(account, tenant_display_name)))
 }
 
 /// Projects a [`UserAccount`] to its wire DTO. Ids are emitted in bare form, as
 /// every other management endpoint does (and as the path parsers expect back).
-pub(super) fn user_account_to_response(account: UserAccount) -> UserAccountResponse {
+/// `tenant_display_name` is the owning tenant's display name, supplied by the
+/// caller (which already holds a connection); `None` only when the tenant has no
+/// display name set.
+pub(super) fn user_account_to_response(
+    account: UserAccount,
+    tenant_display_name: Option<String>,
+) -> UserAccountResponse {
     UserAccountResponse {
         id: account.id.bare().to_string(),
         tenant_id: account.tenant_id.bare().to_string(),
+        tenant_display_name,
         provisioning_first_name: account.provisioning_first_name,
         provisioning_last_name: account.provisioning_last_name,
         provisioning_home_organization: account.provisioning_home_organization,

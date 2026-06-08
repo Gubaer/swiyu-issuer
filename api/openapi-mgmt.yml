@@ -2184,6 +2184,14 @@ components:
             Owning tenant (bare id). Always present, including in cross-tenant
             resolution results.
           example: 9hXq2vRtL8pK7f
+        tenant_display_name:
+          type: [string, "null"]
+          description: |
+            The owning tenant's human-readable name. Present on every response
+            carrying an account, so a client can always label it by tenant —
+            notably the cross-tenant account picker. `null` only when the tenant
+            has no display name set.
+          example: SWIYU Dev
         provisioning_first_name:
           type: [string, "null"]
         provisioning_last_name:
