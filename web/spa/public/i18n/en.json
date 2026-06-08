@@ -114,5 +114,17 @@
       "create_another": "Create another",
       "back_to_offers": "Back to offers"
     }
+  },
+  "auth": {
+    "login": {
+      "title": "swiyu issuer",
+      "subtitle": "Sign in to continue",
+      "sign_in": "Sign in",
+      "error_no_access": "Your account has no access. Contact your administrator.",
+      "error_idp": "Sign-in with the identity provider failed. Please try again.",
+      "error_state": "Your sign-in session expired. Please try again.",
+      "error_unavailable": "Sign-in is temporarily unavailable. Please try again later.",
+      "error_generic": "Sign-in failed. Please try again."
+    }
   }
 }

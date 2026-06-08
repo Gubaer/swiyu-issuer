@@ -1,0 +1,20 @@
+<div class="login-page">
+  <p-card styleClass="login-card">
+    <div class="login-brand">
+      <i class="pi pi-id-card text-primary" style="font-size: 2rem"></i>
+      <span class="login-title">{{ 'auth.login.title' | transloco }}</span>
+    </div>
+    <p class="login-subtitle">{{ 'auth.login.subtitle' | transloco }}</p>
+
+    @if (errorKey) {
+      <p-message severity="error" styleClass="login-error">{{ errorKey | transloco }}</p-message>
+    }
+
+    <p-button
+      [label]="'auth.login.sign_in' | transloco"
+      icon="pi pi-sign-in"
+      styleClass="login-button"
+      (onClick)="signIn()"
+    />
+  </p-card>
+</div>

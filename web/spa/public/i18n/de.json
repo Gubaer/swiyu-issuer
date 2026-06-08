@@ -114,5 +114,17 @@
       "create_another": "Weiteres erstellen",
       "back_to_offers": "Zurück zu den Angeboten"
     }
+  },
+  "auth": {
+    "login": {
+      "title": "swiyu issuer",
+      "subtitle": "Zum Fortfahren anmelden",
+      "sign_in": "Anmelden",
+      "error_no_access": "Ihr Konto hat keinen Zugriff. Bitte wenden Sie sich an Ihre Administratorin oder Ihren Administrator.",
+      "error_idp": "Die Anmeldung beim Identitätsanbieter ist fehlgeschlagen. Bitte versuchen Sie es erneut.",
+      "error_state": "Ihre Anmeldesitzung ist abgelaufen. Bitte versuchen Sie es erneut.",
+      "error_unavailable": "Die Anmeldung ist vorübergehend nicht verfügbar. Bitte versuchen Sie es später erneut.",
+      "error_generic": "Die Anmeldung ist fehlgeschlagen. Bitte versuchen Sie es erneut."
+    }
   }
 }
