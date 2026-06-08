@@ -88,7 +88,7 @@ present the right *shape* of token for the operation.
 
 ## Keycloak: what the dev realm already provides
 
-`api/deploy/keycloak/realm/swiyu-issuer-realm.json`, realm `swiyu-issuer`
+`keycloak/realm/swiyu-issuer-realm.json`, realm `swiyu-issuer`
 (dev: `http://localhost:8083/realms/swiyu-issuer`):
 
 - **`swiyu-issuer-web-bff`** — confidential client, secret `dev-bff-secret`.

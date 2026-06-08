@@ -101,10 +101,10 @@ services:
   # Keycloak authorization server (development). Boots the swiyu-issuer
   # realm from the baked-in import so the dev-ba client can mint
   # EdDSA-signed JWTs that swiyu-issuer-mgmtapi validates. See
-  # api/deploy/keycloak/.
+  # keycloak/ (at the repo root — shared by the api and web stacks).
   keycloak:
     build:
-      context: deploy/keycloak
+      context: ../keycloak
       dockerfile: Dockerfile
     image: swiyu-issuer-keycloak
     container_name: swiyu-issuer-keycloak
@@ -320,7 +320,7 @@ services:
       DATABASE_URL: postgres://${POSTGRES_USER:-swiyu_issuer}:${POSTGRES_PASSWORD:-swiyu_issuer}@postgres:5432/${POSTGRES_DB:-swiyu_issuer}
       DEV_TENANT_PARTNER_ID: ${DEV_TENANT_PARTNER_ID:-}
       # Optional overrides; defaults match the `act-as-user` scope and `dev-user`
-      # id in api/deploy/keycloak/realm/swiyu-issuer-realm.json. Change both sides
+      # id in keycloak/realm/swiyu-issuer-realm.json. Change both sides
       # together — the realm import does not read env.
       DEV_USER_IDENTITY_ISS: ${DEV_USER_IDENTITY_ISS:-http://localhost:8083/realms/swiyu-issuer}
       DEV_USER_IDENTITY_SUB: ${DEV_USER_IDENTITY_SUB:-11111111-1111-4111-8111-111111111111}

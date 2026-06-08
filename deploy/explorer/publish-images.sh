@@ -155,10 +155,10 @@ for stage in mgmtapi oidcapi cli; do
 done
 
 # Keycloak: stock Keycloak with the swiyu-issuer realm baked in. Its own
-# Dockerfile and context (the realm COPY is relative to api/deploy/keycloak),
-# and no build target. The explorer stack pulls this as
+# Dockerfile and context at the repo root (the realm COPY is relative to
+# keycloak/), and no build target. The explorer stack pulls this as
 # ${REGISTRY}/swiyu-issuer-keycloak.
-build_image "swiyu-issuer-keycloak" "api/deploy/keycloak/Dockerfile" "api/deploy/keycloak"
+build_image "swiyu-issuer-keycloak" "keycloak/Dockerfile" "keycloak"
 
 # The web front end (SPA + BFF), built from web/Dockerfile with the repo root as
 # context (the cargo workspace and the SPA both live under the root). No build

@@ -1,10 +1,13 @@
 # Keycloak for swiyu-issuer (development)
 
-A Keycloak authorization server for the swiyu-issuer development stacks — both
-the local dev stack (`api/docker-compose.yml`) and the explore stack
-(`deploy/explorer/`) — with the `swiyu-issuer` realm baked in.
-`swiyu-issuer-mgmtapi` validates the EdDSA-signed JWTs this realm issues and
-derives the tenant from a `tenant_id` claim.
+A Keycloak authorization server for the swiyu-issuer development stacks — the
+local dev stack (`api/docker-compose.yml`), the web front end
+(`web/docker-compose.yml`), and the explorer stack (`deploy/explorer/`) — with
+the `swiyu-issuer` realm baked in. It lives at the repo root because the realm
+is shared by the api and web tiers: `swiyu-issuer-mgmtapi` validates the
+EdDSA-signed JWTs the realm issues (deriving the tenant from a `tenant_id`
+claim), and the web BFF runs the user login + act-as-user token exchange
+against the same realm.
 
 > Development only. The realm uses fixed dev secrets and `sslRequired=none`
 > (plain HTTP). Do not use it as-is in production.
@@ -32,8 +35,7 @@ derives the tenant from a `tenant_id` claim.
 ## Build and run
 
 ```sh
-docker build -f api/deploy/keycloak/Dockerfile -t swiyu-issuer-keycloak:dev \
-    api/deploy/keycloak
+docker build -f keycloak/Dockerfile -t swiyu-issuer-keycloak:dev keycloak
 docker run --rm -p 8083:8080 -p 9000:9000 \
     -e KC_BOOTSTRAP_ADMIN_USERNAME=admin \
     -e KC_BOOTSTRAP_ADMIN_PASSWORD=admin \

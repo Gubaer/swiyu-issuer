@@ -25,7 +25,7 @@ const DEV_DUMMY_INTERNAL_DESCRIPTION: &str =
 // Defaults for the federated identity (`iss`, `sub`) the dev user account is
 // linked to, overridable via `DEV_USER_IDENTITY_ISS` / `DEV_USER_IDENTITY_SUB`
 // (see [`parse_dev_user_args`]). These MUST stay in lock-step with the Keycloak
-// dev realm (`api/deploy/keycloak/realm/swiyu-issuer-realm.json`):
+// dev realm (`keycloak/realm/swiyu-issuer-realm.json`):
 //   - the iss == the hardcoded `user_identity.iss` on the `act-as-user` client
 //     scope, and
 //   - the sub == the `dev-user`'s Keycloak `id` (which the scope projects into
