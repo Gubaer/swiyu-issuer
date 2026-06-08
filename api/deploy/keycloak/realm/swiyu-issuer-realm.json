@@ -167,7 +167,8 @@
       "webOrigins": ["http://localhost:4200"],
       "attributes": {
         "access.token.signed.response.alg": "EdDSA",
-        "standard.token.exchange.enabled": "true"
+        "standard.token.exchange.enabled": "true",
+        "post.logout.redirect.uris": "http://localhost:4200/login"
       },
       "defaultClientScopes": ["basic", "roles", "mgmtapi-audience"],
       "optionalClientScopes": ["act-as-user"],
