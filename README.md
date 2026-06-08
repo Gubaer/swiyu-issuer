@@ -13,9 +13,12 @@ swiyu-issuer/
 │   │               #   binaries: swiyu-issuer-mgmtapi, swiyu-issuer-oidcapi,
 │   │               #             swiyu-issuer-cli
 │   └── …           # see api/README.md
-└── web/            # browser-facing tier
-    ├── bff/        # crate `swiyu-issuer-web-bff` — auth-injecting proxy to the mgmt API
-    └── spa/        # Angular admin SPA (npm); served by the BFF
+├── web/            # browser-facing tier
+│   ├── bff/        # crate `swiyu-issuer-web-bff` — auth-injecting proxy to the mgmt API
+│   └── spa/        # Angular admin SPA (npm); served by the BFF
+├── keycloak/       # Keycloak realm + image, shared by the api and web stacks
+└── deploy/
+    └── explorer/   # run-from-published-images bundle (see deploy/explorer/README.md)
 ```
 
 - **[`api/`](./api/README.md)** — the core issuer: a multi-tenant
@@ -44,6 +47,18 @@ environment, but APIs and on-disk state are not yet stable.
 Credentials are currently issued against DIDs registered with `did:tdw` 0.3.
 `did:webvh` 1.0 code paths exist in the shared `swiyu-rs` crates but are
 unverified.
+
+## Run it without building
+
+To run the full stack — backend **and** the web UI — without cloning the repo or
+installing a Rust/Node toolchain, use the **explorer deploy bundle**: a
+standalone `docker-compose.yml` that pulls prebuilt images from GitHub Container
+Registry. You need Docker, an [ePortal](https://eportal.admin.ch/) account with a
+registered Business Partner, and the two files in
+[`deploy/explorer/`](./deploy/explorer/README.md). Then open the web UI at
+<http://localhost:3000>.
+
+→ [`deploy/explorer/README.md`](./deploy/explorer/README.md)
 
 ## Building
 

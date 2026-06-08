@@ -173,6 +173,40 @@ The bootstrap is idempotent on subsequent `docker compose up -d`
 runs against an existing volume; wipe with `docker compose down -v`
 to start fresh (see *Troubleshooting*).
 
+## Distribution
+
+This bundle pulls prebuilt images from GitHub Container Registry
+(`ghcr.io/gubaer`); nothing is built locally. Five image families make up the
+stack:
+
+| Image | What it is |
+|---|---|
+| `swiyu-issuer-mgmtapi` | Management API + lifecycle worker |
+| `swiyu-issuer-oidcapi` | OID4VCI (wallet-facing) endpoint |
+| `swiyu-issuer-cli` | CLI, used by the one-shot bootstrap sidecars |
+| `swiyu-issuer-keycloak` | Keycloak with the `swiyu-issuer` realm baked in |
+| `swiyu-issuer-web` | The web UI (Angular SPA + axum BFF) on `:3000` |
+
+Postgres and Vault use upstream images (`postgres`, `hashicorp/vault`).
+
+**Tags and versioning.** Every image carries the floating `swiyu-beta` tag
+(latest beta) plus a pinned `<version>-swiyu-beta` tag. The backend images
+(`mgmtapi`/`oidcapi`/`cli`/`keycloak`) share the **api** crate's version and are
+pinned together via `IMAGE_TAG`. The **web UI is versioned independently** (from
+the BFF crate) and pinned separately via `WEB_IMAGE_TAG` — so a backend release
+and a UI release need not move in lock-step. Both default to `swiyu-beta`; see
+`.env.example`.
+
+**How the bundle is produced (maintainers).** The two files here are not written
+by hand:
+
+- `docker-compose.yml` is **generated** by `gen-compose.py`, which merges the dev
+  composes `api/docker-compose.yml` and `web/docker-compose.yml` and swaps each
+  `build:` for the published `image:`. Regenerate with
+  `uv run gen-compose.py` (and `--check` guards against drift).
+- The images are built and pushed by `publish-images.sh` (`--push` to publish;
+  `REGISTRY` / `PLATFORMS` override the registry and target architectures).
+
 ## Troubleshooting
 
 **Refresh token expired (after ~7 days).** Issue a fresh renewal token
