@@ -1,3 +1,4 @@
+mod auth;
 mod config;
 mod error;
 mod routes;
@@ -9,16 +10,28 @@ use std::sync::Arc;
 use swiyu_registries::identifier::IdentifierRegistryClient;
 use tracing_subscriber::EnvFilter;
 
+use std::time::Duration;
+
+use crate::auth::{FirstPartyTokenProvider, OidcLoginClient, PendingLogins};
 use crate::config::Config;
 use crate::routes::AppState;
 use crate::upstream::MgmtApiClient;
+
+/// How long an in-flight login (PKCE verifier / nonce) is kept before the sweep
+/// evicts it, and how often the sweep runs.
+const PENDING_LOGIN_TTL: Duration = Duration::from_secs(600);
+const PENDING_SWEEP_INTERVAL: Duration = Duration::from_secs(60);
 
 #[derive(Debug, thiserror::Error)]
 enum StartupError {
     #[error("config error: {0}")]
     Config(#[from] config::ConfigError),
-    #[error("upstream client construction failed: {0}")]
-    Upstream(#[from] upstream::ClientError),
+    #[error("http client construction failed: {0}")]
+    HttpClient(#[from] reqwest::Error),
+    #[error("OIDC discovery failed: {0}")]
+    Discovery(#[from] auth::DiscoveryError),
+    #[error("OIDC login client setup failed: {0}")]
+    LoginClient(#[from] auth::LoginClientError),
     #[error("identifier registry client construction failed: {0}")]
     Registry(#[from] swiyu_registries::common::RegistryError),
     #[error("io error: {0}")]
@@ -34,14 +47,46 @@ async fn main() -> Result<(), StartupError> {
         .init();
 
     let config = Config::from_env()?;
-    let mgmt_api = MgmtApiClient::new(&config.mgmtapi_url, &config.mgmtapi_token)?;
+
+    // Discover the realm once at startup; fail fast if it is unreachable.
+    let oidc = auth::discover(&config.oidc.issuer_url).await?;
+    let login = Arc::new(OidcLoginClient::discover(&config.oidc).await?);
+    tracing::info!(issuer = %oidc.issuer, "OIDC provider discovered");
+
+    // One HTTP client shared by the token provider and the management-API client.
+    let http = reqwest::Client::builder().build()?;
+    let first_party = Arc::new(FirstPartyTokenProvider::new(
+        http.clone(),
+        oidc.token_endpoint.clone(),
+        config.oidc.client_id.clone(),
+        config.oidc.client_secret.clone(),
+    ));
+    let mgmt_api = MgmtApiClient::new(http, &config.mgmtapi_url, first_party);
+
     let identifier_registry =
         IdentifierRegistryClient::new(config.identifier_registry_url.clone())?;
+
+    // In-flight logins, with a background sweep evicting abandoned entries.
+    let pending = Arc::new(PendingLogins::new());
+    {
+        let pending = pending.clone();
+        tokio::spawn(async move {
+            let mut ticker = tokio::time::interval(PENDING_SWEEP_INTERVAL);
+            loop {
+                ticker.tick().await;
+                pending.sweep(PENDING_LOGIN_TTL);
+            }
+        });
+    }
+
     let port = config.bff_port;
     let state = AppState {
         config: Arc::new(config),
         mgmt_api,
         identifier_registry: Arc::new(identifier_registry),
+        oidc: Arc::new(oidc),
+        login,
+        pending,
     };
 
     // Bind all interfaces: in the single-container deployment the BFF must

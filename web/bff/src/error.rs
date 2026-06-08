@@ -32,6 +32,9 @@ impl IntoResponse for AppError {
                 (status, [(CONTENT_TYPE, "application/json")], body).into_response()
             }
             Self::Upstream(CallError::Transport(_)) => gateway_error("upstream call failed"),
+            Self::Upstream(CallError::Token(_)) => {
+                gateway_error("could not authenticate with the management API")
+            }
             // Forward the registry's HTTP status (notably 404 for an unknown
             // identifier); treat transport/decode failures as a gateway error.
             Self::Registry(RegistryError::HttpStatus { status, .. }) => {
