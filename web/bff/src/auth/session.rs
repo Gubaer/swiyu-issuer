@@ -56,3 +56,50 @@ impl SessionData {
         now_unix < self.logged_in_at_unix.saturating_add(absolute_timeout_secs)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn account(id: &str) -> SessionAccount {
+        SessionAccount {
+            id: id.to_string(),
+            tenant_id: "t1".to_string(),
+            tenant_display_name: None,
+            display_name: id.to_string(),
+        }
+    }
+
+    fn session(logged_in_at_unix: i64, accounts: Vec<SessionAccount>, selected: &str) -> SessionData {
+        SessionData {
+            iss: "iss".to_string(),
+            sub: "sub".to_string(),
+            kc_access_token: String::new(),
+            kc_refresh_token: String::new(),
+            kc_id_token: String::new(),
+            kc_access_expiry_unix: 0,
+            logged_in_at_unix,
+            accounts,
+            selected_account_id: selected.to_string(),
+        }
+    }
+
+    #[test]
+    fn is_live_until_the_absolute_timeout_elapses() {
+        let data = session(1_000, vec![account("a1")], "a1");
+        // now < logged_in + timeout
+        assert!(data.is_live(1_500, 600));
+        // boundary: now == logged_in + timeout is no longer live
+        assert!(!data.is_live(1_600, 600));
+        assert!(!data.is_live(2_000, 600));
+    }
+
+    #[test]
+    fn selected_resolves_the_selected_account_or_none() {
+        let data = session(0, vec![account("a1"), account("a2")], "a2");
+        assert_eq!(data.selected().map(|a| a.id.as_str()), Some("a2"));
+
+        let stale = session(0, vec![account("a1")], "gone");
+        assert!(stale.selected().is_none());
+    }
+}

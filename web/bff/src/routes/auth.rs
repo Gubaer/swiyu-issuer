@@ -260,3 +260,87 @@ fn display_name(item: &Value) -> String {
         .or_else(|| field("id").map(str::to_string))
         .unwrap_or_default()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn sanitize_return_to_keeps_same_origin_paths() {
+        assert_eq!(sanitize_return_to(Some("/issuers")), "/issuers");
+        assert_eq!(sanitize_return_to(Some("/")), "/");
+        assert_eq!(sanitize_return_to(Some("/a/b?x=1")), "/a/b?x=1");
+    }
+
+    #[test]
+    fn sanitize_return_to_rejects_off_origin_and_missing() {
+        // Protocol-relative (`//host`) is a cross-origin URL to a browser.
+        assert_eq!(sanitize_return_to(Some("//evil.example")), "/");
+        // Absolute URLs and bare paths without a leading slash are rejected.
+        assert_eq!(sanitize_return_to(Some("https://evil.example")), "/");
+        assert_eq!(sanitize_return_to(Some("issuers")), "/");
+        assert_eq!(sanitize_return_to(None), "/");
+    }
+
+    #[test]
+    fn active_accounts_filters_to_active_and_maps_fields() {
+        let resolved = json!({
+            "items": [
+                {
+                    "id": "a1", "tenant_id": "t1", "tenant_display_name": "SWIYU Dev",
+                    "state": "active", "idp_first_name": "Dev", "idp_last_name": "User"
+                },
+                {
+                    "id": "a2", "tenant_id": "t2", "tenant_display_name": null,
+                    "state": "deactivated"
+                }
+            ]
+        });
+        let accounts = active_accounts(&resolved);
+        assert_eq!(accounts.len(), 1);
+        assert_eq!(accounts[0].id, "a1");
+        assert_eq!(accounts[0].tenant_id, "t1");
+        assert_eq!(accounts[0].tenant_display_name.as_deref(), Some("SWIYU Dev"));
+        assert_eq!(accounts[0].display_name, "Dev User");
+    }
+
+    #[test]
+    fn active_accounts_empty_when_no_items_or_none_active() {
+        assert!(active_accounts(&json!({})).is_empty());
+        assert!(active_accounts(&json!({ "items": [] })).is_empty());
+        assert!(
+            active_accounts(&json!({ "items": [{ "id": "a1", "tenant_id": "t1", "state": "deactivated" }] }))
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn display_name_prefers_idp_then_provisioning_then_id() {
+        assert_eq!(
+            display_name(&json!({
+                "id": "a1",
+                "idp_first_name": "Ada", "idp_last_name": "Lovelace",
+                "provisioning_first_name": "P", "provisioning_last_name": "Q"
+            })),
+            "Ada Lovelace"
+        );
+        assert_eq!(
+            display_name(&json!({
+                "id": "a1",
+                "provisioning_first_name": "Prov", "provisioning_last_name": "User"
+            })),
+            "Prov User"
+        );
+        assert_eq!(display_name(&json!({ "id": "a1" })), "a1");
+    }
+
+    #[test]
+    fn display_name_skips_empty_parts() {
+        // Empty strings are ignored, so a single present name still works.
+        assert_eq!(
+            display_name(&json!({ "id": "a1", "idp_first_name": "Solo", "idp_last_name": "" })),
+            "Solo"
+        );
+    }
+}
