@@ -58,8 +58,6 @@ pub struct Config {
     pub identifier_registry_url: String,
     pub oidc: OidcConfig,
     pub session: SessionConfig,
-    pub dev_user_id: String,
-    pub dev_tenant_name: String,
     // Directory of built SPA assets to serve as a static fallback. When
     // unset (the dev workflow, where `ng serve` serves the SPA and proxies
     // `/api` here), the BFF serves only the `/api` routes.
@@ -84,8 +82,6 @@ impl Config {
                 idle_timeout_secs: parse_u64("SESSION_IDLE_TIMEOUT_SECS", 1800)?,
                 absolute_timeout_secs: parse_u64("SESSION_ABSOLUTE_TIMEOUT_SECS", 36000)?,
             },
-            dev_user_id: optional("DEV_USER_ID", "test"),
-            dev_tenant_name: optional("DEV_TENANT_NAME", "dev"),
             spa_dir: optional_present("SPA_DIR"),
         })
     }
