@@ -8,7 +8,9 @@ import { CardModule } from 'primeng/card';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { MessageModule } from 'primeng/message';
 import { TagModule } from 'primeng/tag';
+import { TooltipModule } from 'primeng/tooltip';
 
+import { LocaleDatePipe } from '../../shared/locale-date.pipe';
 import { CredentialOfferCancellation } from './credential-offer-cancellation';
 import {
   CredentialOffer,
@@ -24,11 +26,13 @@ hljs.registerLanguage('json', json);
   imports: [
     RouterLink,
     TranslocoPipe,
+    LocaleDatePipe,
     ButtonModule,
     CardModule,
     ConfirmDialogModule,
     MessageModule,
     TagModule,
+    TooltipModule,
   ],
   templateUrl: './credential-offer-detail.html',
   styleUrl: './credential-offer-detail.scss',

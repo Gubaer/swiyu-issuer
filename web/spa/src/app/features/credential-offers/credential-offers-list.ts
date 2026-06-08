@@ -23,6 +23,7 @@ import { Menu, MenuModule } from 'primeng/menu';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { ProgressSpinnerModule } from 'primeng/progressspinner';
 
+import { LocaleDatePipe } from '../../shared/locale-date.pipe';
 import { Issuer } from '../issuers/issuers-service';
 import { IssuersStore } from '../issuers/issuers-store';
 import { CredentialOfferCancellation } from './credential-offer-cancellation';
@@ -36,6 +37,7 @@ import { CredentialOffersStore } from './credential-offers-store';
     FormsModule,
     RouterLink,
     TranslocoPipe,
+    LocaleDatePipe,
     AutoCompleteModule,
     TableModule,
     TagModule,
