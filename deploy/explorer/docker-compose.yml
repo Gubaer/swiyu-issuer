@@ -1,14 +1,16 @@
 # swiyu-issuer explorer stack — pulls published images from GHCR.
 #
-# Goal: no clone, no cargo, no build — just `docker compose up -d`.
+# Goal: no clone, no cargo, no build — just `docker compose up -d`, then open
+# the web UI at http://localhost:3000.
 #
-# GENERATED FILE. Do not edit by hand. The source of truth is
-# api/docker-compose.yml; regenerate with
-#   python3 api/deploy/explorer/gen-compose.py
+# GENERATED FILE. Do not edit by hand. The sources of truth are
+# api/docker-compose.yml and web/docker-compose.yml; regenerate with
+#   python3 deploy/explorer/gen-compose.py
 # CI runs `gen-compose.py --check` to block drift.
 #
-# IMAGE_TAG defaults to the floating `swiyu-beta`. Pin to a release by
-# setting e.g. IMAGE_TAG=0.1.12-swiyu-beta in .env.
+# IMAGE_TAG defaults to the floating `swiyu-beta`. Pin to a release by setting
+# e.g. IMAGE_TAG=0.1.12-swiyu-beta in .env. The web UI is versioned separately:
+# pin it with WEB_IMAGE_TAG (also defaults to swiyu-beta).
 name: swiyu-issuer
 
 services:
@@ -415,5 +417,39 @@ services:
       DEV_TENANT_PARTNER_ID: ${DEV_TENANT_PARTNER_ID:-}
       RUST_LOG: ${RUST_LOG:-info,swiyu_issuer=debug}
 
+  swiyu-issuer-web:
+    image: ghcr.io/gubaer/swiyu-issuer-web:${WEB_IMAGE_TAG:-swiyu-beta}
+    container_name: swiyu-issuer-web
+    ports:
+      - "3000:3000"
+    environment:
+      # The BFF serves the SPA from SPA_DIR and `/api` on this port.
+      BFF_PORT: 3000
+      SPA_DIR: /srv/spa
+
+      # mgmtapi over the in-network service hostname.
+      MGMTAPI_URL: ${MGMTAPI_URL:-http://swiyu-issuer-mgmtapi:8080}
+
+      # OIDC: public issuer (browser + id_token iss) vs in-network back channel.
+      OIDC_ISSUER_URL: ${OIDC_ISSUER_URL:-http://localhost:8083/realms/swiyu-issuer}
+      OIDC_INTERNAL_URL: ${OIDC_INTERNAL_URL:-http://keycloak:8080/realms/swiyu-issuer}
+      OIDC_CLIENT_ID: ${OIDC_CLIENT_ID:-swiyu-issuer-web-bff}
+      OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET:-dev-bff-secret}
+      # The redirect + post-logout URIs point at THIS container's published :3000.
+      OIDC_REDIRECT_URI: ${OIDC_REDIRECT_URI:-http://localhost:3000/api/auth/callback}
+      OIDC_POST_LOGOUT_REDIRECT_URI: ${OIDC_POST_LOGOUT_REDIRECT_URI:-http://localhost:3000/login}
+
+      # Session cookie + lifetimes. SECURE stays false on plain-HTTP dev.
+      SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-false}
+      SESSION_IDLE_TIMEOUT_SECS: ${SESSION_IDLE_TIMEOUT_SECS:-1800}
+      SESSION_ABSOLUTE_TIMEOUT_SECS: ${SESSION_ABSOLUTE_TIMEOUT_SECS:-36000}
+
+      RUST_LOG: ${RUST_LOG:-info,tower_sessions_core=error}
+    restart: unless-stopped
+    depends_on:
+      keycloak:
+        condition: service_healthy
+      swiyu-issuer-mgmtapi:
+        condition: service_healthy
 volumes:
   postgres_data:

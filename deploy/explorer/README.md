@@ -1,15 +1,16 @@
 # swiyu-issuer explorer
 
-Run the SWIYU credential issuer locally without cloning the repo or
-installing a Rust toolchain. This directory ships a standalone
-`docker-compose.yml` that pulls prebuilt images from GitHub Container
-Registry; you only need Docker, an [ePortal](https://eportal.admin.ch/) account, and the two
-files in this directory.
+Run the SWIYU credential issuer — backend **and** the `swiyu-issuer-web` UI —
+locally without cloning the repo or installing a Rust/Node toolchain. This
+directory ships a standalone `docker-compose.yml` that pulls prebuilt images
+from GitHub Container Registry; you only need Docker, an
+[ePortal](https://eportal.admin.ch/) account, and the two files in this
+directory. Once up, the web UI is at <http://localhost:3000>.
 
 For the contributor flow (building from source), see
-[`api/.env.example`](../../.env.example) and
-[`api/docker-compose.yml`](../../docker-compose.yml) in
-the repo instead.
+[`api/.env.example`](../../api/.env.example) +
+[`api/docker-compose.yml`](../../api/docker-compose.yml) and
+[`web/docker-compose.yml`](../../web/docker-compose.yml) in the repo instead.
 
 ## Not for production use
 
@@ -62,8 +63,8 @@ proxy terminating TLS, and scoped auth tokens.
 Grab the two files into an empty directory:
 
 ```sh
-curl -O https://raw.githubusercontent.com/Gubaer/swiyu-issuer/master/api/deploy/explorer/docker-compose.yml
-curl -O https://raw.githubusercontent.com/Gubaer/swiyu-issuer/master/api/deploy/explorer/.env.example
+curl -O https://raw.githubusercontent.com/Gubaer/swiyu-issuer/master/deploy/explorer/docker-compose.yml
+curl -O https://raw.githubusercontent.com/Gubaer/swiyu-issuer/master/deploy/explorer/.env.example
 ```
 
 By default the compose file pulls the floating `:swiyu-beta` tag. To
@@ -122,28 +123,18 @@ Start everything:
 docker compose up -d
 ```
 
-The first run pulls four images (Postgres, Vault, and the three
-`swiyu-issuer` images) and brings them up in dependency order.
+The first run pulls the images (Postgres, Vault, Keycloak, the three
+`swiyu-issuer` binaries, and `swiyu-issuer-web`) and brings them up in
+dependency order. The web UI comes up last, once Keycloak and mgmtapi are
+healthy.
 
-Once the stack is up (including Keycloak and `bootstrap-dev-ba-mapper`),
-obtain a bearer JWT for the management API from Keycloak using the
-`dev-ba` client-credentials grant:
+Then just open the web UI and sign in:
 
-```sh
-TOKEN=$(curl -s -X POST \
-  "http://localhost:${KEYCLOAK_HOST_PORT:-8083}/realms/swiyu-issuer/protocol/openid-connect/token" \
-  -d grant_type=client_credentials \
-  -u "${DEV_BA_CLIENT_ID:-dev-ba}:${DEV_BA_CLIENT_SECRET:-dev-ba-secret}" \
-  | python3 -c 'import json,sys; print(json.load(sys.stdin)["access_token"])')
+<http://localhost:3000> — sign in as `dev-user` / `dev-user`.
 
-curl -fsS http://localhost:8080/healthz
-curl -fsS http://localhost:8081/healthz
-curl -fsS -H "Authorization: Bearer $TOKEN" http://localhost:8080/issuers
-```
-
-From here you can drive the credential-offer flow against the
-management API (port 8080) and verify the OIDC binary (port 8081)
-serves the credential offer back to a wallet.
+From there you can drive the credential-offer flow end to end. (The management
+API on `:8080` and the OID4VCI endpoint on `:8081` are still reachable directly
+if you want to script against them — see the source repo's API docs.)
 
 ## 6. What gets provisioned
 

@@ -2,7 +2,7 @@
 
 A Keycloak authorization server for the swiyu-issuer development stacks — both
 the local dev stack (`api/docker-compose.yml`) and the explore stack
-(`api/deploy/explorer/`) — with the `swiyu-issuer` realm baked in.
+(`deploy/explorer/`) — with the `swiyu-issuer` realm baked in.
 `swiyu-issuer-mgmtapi` validates the EdDSA-signed JWTs this realm issues and
 derives the tenant from a `tenant_id` claim.
 
@@ -41,7 +41,7 @@ docker run --rm -p 8083:8080 -p 9000:9000 \
 ```
 
 Readiness: `GET http://localhost:9000/health/ready`. Both the local dev stack
-(`api/docker-compose.yml`) and the explore stack (`api/deploy/explorer/`) wire
+(`api/docker-compose.yml`) and the explore stack (`deploy/explorer/`) wire
 this up.
 
 ## The `tenant_id` mapper is provisioned after import

@@ -15,10 +15,15 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ISSUER_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
-REPO_ROOT="$(cd "${ISSUER_DIR}/.." && pwd)"
+# This script lives at deploy/explorer/; the repo root is two levels up.
+REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+ISSUER_DIR="${REPO_ROOT}/api"
 
+# The rust + keycloak images share the api crate's version; swiyu-issuer-web is
+# versioned independently, from the BFF crate.
 VERSION="$(grep -m1 '^version' "${ISSUER_DIR}/Cargo.toml" \
+    | sed -E 's/^version *= *"([^"]+)".*/\1/')"
+WEB_VERSION="$(grep -m1 '^version' "${REPO_ROOT}/web/bff/Cargo.toml" \
     | sed -E 's/^version *= *"([^"]+)".*/\1/')"
 
 REGISTRY="${REGISTRY:-ghcr.io/gubaer}"
@@ -60,17 +65,19 @@ cd "${REPO_ROOT}"
 
 PUSHED_REFS=()
 
-# build_image <image_name> <dockerfile> <context> [target]
+# build_image <image_name> <dockerfile> <context> [target] [version]
 #
 # Builds one image and, on a --push run, appends its pushed digest ref to the
 # global PUSHED_REFS. The runtime-* stages share api/Dockerfile and the repo
 # root as context; Keycloak has its own Dockerfile, its own context, and no
-# build target — hence the parameterization.
+# build target — hence the parameterization. `version` tags + labels the image
+# and defaults to the api ${VERSION}; swiyu-issuer-web overrides it.
 build_image() {
     local image_name="$1"
     local dockerfile="$2"
     local context="$3"
     local target="${4:-}"
+    local version="${5:-${VERSION}}"
 
     # buildx pushes every -t when --push is set, so on a push run we use
     # only the ${REGISTRY}/-prefixed names. Unprefixed local-only tags
@@ -81,17 +88,17 @@ build_image() {
     if [[ "${PUSH}" -eq 1 ]]; then
         TAGS=(
             -t "${REGISTRY}/${image_name}:swiyu-beta"
-            -t "${REGISTRY}/${image_name}:${VERSION}-swiyu-beta"
+            -t "${REGISTRY}/${image_name}:${version}-swiyu-beta"
         )
     else
         TAGS=(
             -t "${image_name}:swiyu-beta"
-            -t "${image_name}:${VERSION}-swiyu-beta"
+            -t "${image_name}:${version}-swiyu-beta"
         )
     fi
 
     local LABELS=(
-        --label "org.opencontainers.image.version=${VERSION}"
+        --label "org.opencontainers.image.version=${version}"
         --label "org.opencontainers.image.revision=${GIT_REVISION}"
         --label "org.opencontainers.image.created=${BUILD_CREATED}"
     )
@@ -152,6 +159,12 @@ done
 # and no build target. The explorer stack pulls this as
 # ${REGISTRY}/swiyu-issuer-keycloak.
 build_image "swiyu-issuer-keycloak" "api/deploy/keycloak/Dockerfile" "api/deploy/keycloak"
+
+# The web front end (SPA + BFF), built from web/Dockerfile with the repo root as
+# context (the cargo workspace and the SPA both live under the root). No build
+# target, and its own version (WEB_VERSION, from the BFF crate). The explorer
+# stack pulls this as ${REGISTRY}/swiyu-issuer-web.
+build_image "swiyu-issuer-web" "web/Dockerfile" "." "" "${WEB_VERSION}"
 
 if [[ "${PUSH}" -eq 1 ]]; then
     echo

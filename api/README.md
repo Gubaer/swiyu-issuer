@@ -61,11 +61,12 @@ If you want to experiment without cloning the repo or installing a Rust
 toolchain, use the **explorer deploy bundle**: a standalone `docker-compose.yml`
 that pulls prebuilt images from GHCR.
 
-→ [`deploy/explorer/README.md`](./deploy/explorer/README.md)
+→ [`deploy/explorer/README.md`](../deploy/explorer/README.md)
 
 You'll need Docker, an [ePortal](https://eportal.admin.ch/) account with a
-registered Business Partner, and the two files in `deploy/explorer/`. The
-bundle is **not hardened** — see the warning at the top of its README.
+registered Business Partner, and the two files in `deploy/explorer/` (now at the
+repo root, spanning the api + web stacks). The bundle is **not hardened** — see
+the warning at the top of its README.
 
 ## Build and run from source
 

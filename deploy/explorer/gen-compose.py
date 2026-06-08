@@ -1,13 +1,17 @@
 #!/usr/bin/env python3
-"""Generate the explorer docker-compose.yml from the dev docker-compose.yml.
+"""Generate the explorer docker-compose.yml from the dev compose files.
 
-From api/deploy/explorer/:
+From deploy/explorer/:
 
   uv run gen-compose.py            # write
   uv run gen-compose.py --check    # CI guard
 
-The dev compose at api/docker-compose.yml is the single source of
-truth; the explorer copy is regenerated whenever the dev compose changes.
+The dev composes are the single source of truth:
+  - api/docker-compose.yml  — the backend stack (Postgres, Vault, Keycloak,
+    mgmtapi, oidcapi, the bootstrap sidecars)
+  - web/docker-compose.yml  — the swiyu-issuer-web front end (SPA + BFF)
+
+The explorer copy merges both and is regenerated whenever either changes.
 Dependencies (ruamel.yaml) are pinned via this directory's pyproject.toml
 and uv.lock — `uv run` provisions the venv on first use.
 """
@@ -20,9 +24,10 @@ from pathlib import Path
 
 try:
     from ruamel.yaml import YAML
+    from ruamel.yaml.comments import CommentedMap
 except ImportError:
     sys.stderr.write(
-        "error: ruamel.yaml is required. From api/deploy/explorer/:\n"
+        "error: ruamel.yaml is required. From deploy/explorer/:\n"
         "  uv sync && uv run gen-compose.py\n"
     )
     sys.exit(2)
@@ -43,21 +48,54 @@ SERVICE_TO_IMAGE = {
     "bootstrap-dev-issuer": "swiyu-issuer-cli",
     "bootstrap-dev-ba-mapper": "swiyu-issuer-cli",
     "bootstrap-dev-user": "swiyu-issuer-cli",
+    "swiyu-issuer-web": "swiyu-issuer-web",
 }
 
 EXPLORER_HEADER = """\
 # swiyu-issuer explorer stack — pulls published images from GHCR.
 #
-# Goal: no clone, no cargo, no build — just `docker compose up -d`.
+# Goal: no clone, no cargo, no build — just `docker compose up -d`, then open
+# the web UI at http://localhost:3000.
 #
-# GENERATED FILE. Do not edit by hand. The source of truth is
-# api/docker-compose.yml; regenerate with
-#   python3 api/deploy/explorer/gen-compose.py
+# GENERATED FILE. Do not edit by hand. The sources of truth are
+# api/docker-compose.yml and web/docker-compose.yml; regenerate with
+#   python3 deploy/explorer/gen-compose.py
 # CI runs `gen-compose.py --check` to block drift.
 #
-# IMAGE_TAG defaults to the floating `swiyu-beta`. Pin to a release by
-# setting e.g. IMAGE_TAG=0.1.12-swiyu-beta in .env.
+# IMAGE_TAG defaults to the floating `swiyu-beta`. Pin to a release by setting
+# e.g. IMAGE_TAG=0.1.12-swiyu-beta in .env. The web UI is versioned separately:
+# pin it with WEB_IMAGE_TAG (also defaults to swiyu-beta).
 """
+
+
+def merge_web(api_data, web_data) -> None:
+    """Fold the `swiyu-issuer-web` service from the web compose into the api
+    compose. The standalone web compose joins the backend over an *external*
+    network; in the merged explorer compose it shares the default network with
+    the api services, so the external-network indirection is dropped and an
+    explicit dependency on the realm + mgmtapi is added."""
+    web_service = web_data["services"]["swiyu-issuer-web"]
+
+    # Same default network as the api services — drop the standalone external-net.
+    if "networks" in web_service:
+        del web_service["networks"]
+
+    # Scrub comments that described the standalone external-network setup so they
+    # do not dangle in the merged output. The comment preceding the web compose's
+    # top-level `networks:` block attaches to the service's last key (`restart`).
+    for key in ("networks", "restart"):
+        web_service.ca.items.pop(key, None)
+
+    # Start only once the realm and mgmtapi are healthy (the BFF fetches the
+    # realm JWKS at startup and calls mgmtapi on every request).
+    depends_on = CommentedMap()
+    depends_on["keycloak"] = CommentedMap([("condition", "service_healthy")])
+    depends_on["swiyu-issuer-mgmtapi"] = CommentedMap(
+        [("condition", "service_healthy")]
+    )
+    web_service["depends_on"] = depends_on
+
+    api_data["services"]["swiyu-issuer-web"] = web_service
 
 
 def transform(data) -> None:
@@ -76,8 +114,12 @@ def transform(data) -> None:
         # always-on CLI to hide, so drop it if present.
         if "profiles" in service:
             del service["profiles"]
+        # swiyu-issuer-web is versioned independently from the rust/keycloak
+        # images, so it pins via its own WEB_IMAGE_TAG (both default to the
+        # floating `swiyu-beta`, which every image carries).
+        tag_var = "WEB_IMAGE_TAG" if service_name == "swiyu-issuer-web" else "IMAGE_TAG"
         service["image"] = (
-            f"{REGISTRY}/{image_name}:" + "${IMAGE_TAG:-swiyu-beta}"
+            f"{REGISTRY}/{image_name}:" + "${" + tag_var + ":-swiyu-beta}"
         )
         service.move_to_end("image", last=False)
 
@@ -90,19 +132,22 @@ def transform(data) -> None:
     data.yaml_set_start_comment(EXPLORER_HEADER)
 
 
-def generate(dev_compose: Path) -> str:
+def generate(api_compose: Path, web_compose: Path) -> str:
     yaml = YAML()
     yaml.preserve_quotes = True
     yaml.indent(mapping=2, sequence=4, offset=2)
     yaml.width = 4096  # don't reflow long scalar values
 
-    with dev_compose.open("r", encoding="utf-8") as f:
-        data = yaml.load(f)
+    with api_compose.open("r", encoding="utf-8") as f:
+        api_data = yaml.load(f)
+    with web_compose.open("r", encoding="utf-8") as f:
+        web_data = yaml.load(f)
 
-    transform(data)
+    merge_web(api_data, web_data)
+    transform(api_data)
 
     buf = io.StringIO()
-    yaml.dump(data, buf)
+    yaml.dump(api_data, buf)
     return buf.getvalue()
 
 
@@ -116,10 +161,12 @@ def main() -> int:
     args = parser.parse_args()
 
     script_dir = Path(__file__).resolve().parent
-    dev_compose = script_dir.parent.parent / "docker-compose.yml"
+    repo_root = script_dir.parent.parent
+    api_compose = repo_root / "api" / "docker-compose.yml"
+    web_compose = repo_root / "web" / "docker-compose.yml"
     out_path = script_dir / "docker-compose.yml"
 
-    generated = generate(dev_compose)
+    generated = generate(api_compose, web_compose)
 
     if args.check:
         existing = out_path.read_text(encoding="utf-8") if out_path.exists() else ""
