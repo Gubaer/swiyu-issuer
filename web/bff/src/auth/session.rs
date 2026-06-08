@@ -48,4 +48,11 @@ impl SessionData {
             .iter()
             .find(|account| account.id == self.selected_account_id)
     }
+
+    /// Whether the absolute session lifetime is still in effect at `now_unix`
+    /// (the idle timeout is enforced separately by the cookie expiry). `now` is
+    /// injected so the check is pure and testable.
+    pub fn is_live(&self, now_unix: i64, absolute_timeout_secs: i64) -> bool {
+        now_unix < self.logged_in_at_unix.saturating_add(absolute_timeout_secs)
+    }
 }

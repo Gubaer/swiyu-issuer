@@ -7,50 +7,59 @@ use swiyu_core::didlog::DIDLogEntry;
 
 use super::AppState;
 use crate::error::AppError;
+use crate::upstream::UserAuth;
 
-pub async fn list_issuers(State(state): State<AppState>) -> Result<Json<Value>, AppError> {
-    let payload = state.mgmt_api.list_issuers().await?;
+pub async fn list_issuers(
+    State(state): State<AppState>,
+    auth: UserAuth,
+) -> Result<Json<Value>, AppError> {
+    let payload = state.mgmt_api.list_issuers(&auth).await?;
     Ok(Json(payload))
 }
 
 pub async fn create_issuer(
     State(state): State<AppState>,
+    auth: UserAuth,
     Json(body): Json<Value>,
 ) -> Result<(StatusCode, Json<Value>), AppError> {
-    let payload = state.mgmt_api.create_issuer(body).await?;
+    let payload = state.mgmt_api.create_issuer(&auth, body).await?;
     Ok((StatusCode::CREATED, Json(payload)))
 }
 
 pub async fn get_issuer(
     State(state): State<AppState>,
+    auth: UserAuth,
     Path(issuer_id): Path<String>,
 ) -> Result<Json<Value>, AppError> {
-    let payload = state.mgmt_api.get_issuer(&issuer_id).await?;
+    let payload = state.mgmt_api.get_issuer(&auth, &issuer_id).await?;
     Ok(Json(payload))
 }
 
 pub async fn deactivate_issuer(
     State(state): State<AppState>,
+    auth: UserAuth,
     Path(issuer_id): Path<String>,
 ) -> Result<Json<Value>, AppError> {
-    let payload = state.mgmt_api.deactivate_issuer(&issuer_id).await?;
+    let payload = state.mgmt_api.deactivate_issuer(&auth, &issuer_id).await?;
     Ok(Json(payload))
 }
 
 pub async fn rotate_keys(
     State(state): State<AppState>,
+    auth: UserAuth,
     Path(issuer_id): Path<String>,
     Json(body): Json<Value>,
 ) -> Result<Json<Value>, AppError> {
-    let payload = state.mgmt_api.rotate_keys(&issuer_id, body).await?;
+    let payload = state.mgmt_api.rotate_keys(&auth, &issuer_id, body).await?;
     Ok(Json(payload))
 }
 
 pub async fn get_did_log(
     State(state): State<AppState>,
+    auth: UserAuth,
     Path(issuer_id): Path<String>,
 ) -> Result<Json<Value>, AppError> {
-    let issuer = state.mgmt_api.get_issuer(&issuer_id).await?;
+    let issuer = state.mgmt_api.get_issuer(&auth, &issuer_id).await?;
     let did_str = issuer
         .get("did")
         .and_then(Value::as_str)

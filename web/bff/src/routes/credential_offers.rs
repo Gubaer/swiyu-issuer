@@ -6,6 +6,7 @@ use serde_json::Value;
 
 use super::AppState;
 use crate::error::AppError;
+use crate::upstream::UserAuth;
 
 #[derive(Debug, Deserialize)]
 pub struct ListQuery {
@@ -15,12 +16,13 @@ pub struct ListQuery {
 
 pub async fn list_credential_offers(
     State(state): State<AppState>,
+    auth: UserAuth,
     Path(issuer_id): Path<String>,
     Query(query): Query<ListQuery>,
 ) -> Result<Json<Value>, AppError> {
     let mut payload = state
         .mgmt_api
-        .list_credential_offers(&issuer_id, query.limit, query.cursor.as_deref())
+        .list_credential_offers(&auth, &issuer_id, query.limit, query.cursor.as_deref())
         .await?;
     strip_claims_from_items(&mut payload);
     Ok(Json(payload))
@@ -28,11 +30,12 @@ pub async fn list_credential_offers(
 
 pub async fn get_credential_offer(
     State(state): State<AppState>,
+    auth: UserAuth,
     Path((issuer_id, offer_id)): Path<(String, String)>,
 ) -> Result<Json<Value>, AppError> {
     let payload = state
         .mgmt_api
-        .get_credential_offer(&issuer_id, &offer_id)
+        .get_credential_offer(&auth, &issuer_id, &offer_id)
         .await?;
     Ok(Json(payload))
 }
@@ -42,12 +45,13 @@ pub async fn get_credential_offer(
 // strip nothing here.
 pub async fn create_credential_offer(
     State(state): State<AppState>,
+    auth: UserAuth,
     Path(issuer_id): Path<String>,
     Json(body): Json<Value>,
 ) -> Result<(StatusCode, Json<Value>), AppError> {
     let payload = state
         .mgmt_api
-        .create_credential_offer(&issuer_id, body)
+        .create_credential_offer(&auth, &issuer_id, body)
         .await?;
     Ok((StatusCode::CREATED, Json(payload)))
 }

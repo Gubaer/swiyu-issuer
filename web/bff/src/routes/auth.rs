@@ -1,17 +1,19 @@
 //! Auth routes: the OIDC login handshake, single sign-out, and account
 //! selection.
 
+use axum::Json;
 use axum::extract::{Query, State};
 use axum::response::{IntoResponse, Redirect, Response};
-use axum::{Json, http::StatusCode};
+use chrono::Utc;
 use serde::Deserialize;
-use serde_json::{Value, json};
+use serde_json::Value;
 use tower_sessions::Session;
 use url::Url;
 
 use crate::auth::{SESSION_DATA_KEY, SessionAccount, SessionData};
 
-use super::{AppState, now_unix, unauthenticated};
+use super::AppState;
+use crate::error::{bad_request, internal_error, unauthenticated};
 
 #[derive(Debug, Deserialize)]
 pub struct LoginQuery {
@@ -101,7 +103,7 @@ pub async fn callback(
         kc_refresh_token: verified.refresh_token.unwrap_or_default(),
         kc_id_token: verified.id_token,
         kc_access_expiry_unix: verified.access_expiry_unix,
-        logged_in_at_unix: now_unix(),
+        logged_in_at_unix: Utc::now().timestamp(),
         accounts,
         selected_account_id,
     };
@@ -208,18 +210,6 @@ fn sanitize_return_to(raw: Option<&str>) -> String {
 fn login_error(code: &str) -> Response {
     tracing::debug!(error = code, "login failed; redirecting to /login");
     Redirect::to(&format!("/login?error={code}")).into_response()
-}
-
-fn internal_error() -> Response {
-    (
-        StatusCode::INTERNAL_SERVER_ERROR,
-        Json(json!({ "error": "internal" })),
-    )
-        .into_response()
-}
-
-fn bad_request(error: &str) -> Response {
-    (StatusCode::BAD_REQUEST, Json(json!({ "error": error }))).into_response()
 }
 
 /// Maps the mgmtapi resolve response to the session's active-account list. Only

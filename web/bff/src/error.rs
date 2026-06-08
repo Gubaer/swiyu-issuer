@@ -39,11 +39,7 @@ impl IntoResponse for AppError {
             // identifier); treat transport/decode failures as a gateway error.
             Self::Registry(RegistryError::HttpStatus { status, .. }) => {
                 let status = StatusCode::from_u16(status).unwrap_or(StatusCode::BAD_GATEWAY);
-                (
-                    status,
-                    Json(json!({ "error": "identifier registry error" })),
-                )
-                    .into_response()
+                json_error(status, "identifier registry error")
             }
             Self::Registry(_) => gateway_error("identifier registry unavailable"),
             // The mgmt API or registry handed us data we could not use.
@@ -54,6 +50,23 @@ impl IntoResponse for AppError {
     }
 }
 
-fn gateway_error(message: &str) -> Response {
-    (StatusCode::BAD_GATEWAY, Json(json!({ "error": message }))).into_response()
+/// The shared shape for all JSON error responses: `{ "error": <message> }`.
+fn json_error(status: StatusCode, message: &str) -> Response {
+    (status, Json(json!({ "error": message }))).into_response()
+}
+
+pub(crate) fn gateway_error(message: &str) -> Response {
+    json_error(StatusCode::BAD_GATEWAY, message)
+}
+
+pub(crate) fn unauthenticated() -> Response {
+    json_error(StatusCode::UNAUTHORIZED, "unauthenticated")
+}
+
+pub(crate) fn internal_error() -> Response {
+    json_error(StatusCode::INTERNAL_SERVER_ERROR, "internal")
+}
+
+pub(crate) fn bad_request(message: &str) -> Response {
+    json_error(StatusCode::BAD_REQUEST, message)
 }

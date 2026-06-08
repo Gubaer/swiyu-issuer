@@ -12,7 +12,7 @@ use tracing_subscriber::EnvFilter;
 
 use std::time::Duration;
 
-use crate::auth::{FirstPartyTokenProvider, OidcLoginClient, PendingLogins};
+use crate::auth::{FirstPartyTokenProvider, OidcLoginClient, PendingLogins, UserTokens};
 use crate::config::Config;
 use crate::routes::AppState;
 use crate::upstream::MgmtApiClient;
@@ -61,6 +61,12 @@ async fn main() -> Result<(), StartupError> {
         config.oidc.client_id.clone(),
         config.oidc.client_secret.clone(),
     ));
+    let user_tokens = Arc::new(UserTokens::new(
+        http.clone(),
+        oidc.token_endpoint.clone(),
+        config.oidc.client_id.clone(),
+        config.oidc.client_secret.clone(),
+    ));
     let mgmt_api = MgmtApiClient::new(http, &config.mgmtapi_url, first_party);
 
     let identifier_registry =
@@ -87,6 +93,7 @@ async fn main() -> Result<(), StartupError> {
         oidc: Arc::new(oidc),
         login,
         pending,
+        user_tokens,
     };
 
     // Bind all interfaces: in the single-container deployment the BFF must

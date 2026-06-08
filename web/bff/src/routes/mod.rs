@@ -6,27 +6,28 @@ mod me;
 mod operation_tasks;
 
 use std::sync::Arc;
-use std::time::{SystemTime, UNIX_EPOCH};
 
-use axum::Json;
 use axum::Router;
-use axum::extract::{Request, State};
-use axum::http::StatusCode;
+use axum::extract::{FromRequestParts, Request, State};
+use axum::http::request::Parts;
 use axum::middleware::Next;
-use axum::response::{IntoResponse, Response};
+use axum::response::Response;
 use axum::routing::{get, post};
-use serde_json::json;
 use tower_http::services::{ServeDir, ServeFile};
 use tower_http::trace::TraceLayer;
 use tower_sessions::cookie::SameSite;
 use tower_sessions::cookie::time::Duration as CookieDuration;
 use tower_sessions::{Expiry, MemoryStore, Session, SessionManagerLayer};
 
+use chrono::Utc;
 use swiyu_registries::identifier::IdentifierRegistryClient;
 
-use crate::auth::{OidcEndpoints, OidcLoginClient, PendingLogins, SESSION_DATA_KEY, SessionData};
+use crate::auth::{
+    OidcEndpoints, OidcLoginClient, PendingLogins, SESSION_DATA_KEY, SessionData, UserTokens,
+};
 use crate::config::{Config, SessionConfig};
-use crate::upstream::MgmtApiClient;
+use crate::error::{gateway_error, internal_error, unauthenticated};
+use crate::upstream::{MgmtApiClient, UserAuth};
 
 #[derive(Clone)]
 pub struct AppState {
@@ -40,6 +41,9 @@ pub struct AppState {
     pub login: Arc<OidcLoginClient>,
     /// In-flight logins (state → PKCE verifier / nonce / return_to).
     pub pending: Arc<PendingLogins>,
+    /// Per-user grants: refreshing the user's access token and exchanging it for
+    /// an mgmtapi act-as-user token.
+    pub user_tokens: Arc<UserTokens>,
 }
 
 pub fn router(state: AppState) -> Router {
@@ -140,43 +144,88 @@ fn build_session_layer(cfg: &SessionConfig) -> SessionManagerLayer<MemoryStore> 
 }
 
 /// Auth middleware for the guarded routes: require a live session with a
-/// selected account, and stash it in the request extensions for the handlers
-/// (the act-as-user path in step 4 reads it from there). Otherwise `401`.
+/// selected account, else `401`. The handlers obtain the act-as-user token via
+/// the [`UserAuth`] extractor, which re-reads the session.
 async fn require_session(
     State(state): State<AppState>,
     session: Session,
-    mut req: Request,
+    req: Request,
     next: Next,
 ) -> Response {
-    let data: Option<SessionData> = session.get(SESSION_DATA_KEY).await.unwrap_or(None);
-    match data {
-        Some(data) if session_is_live(&data, &state) && data.selected().is_some() => {
-            req.extensions_mut().insert(Arc::new(data));
-            next.run(req).await
+    let data = match session.get::<SessionData>(SESSION_DATA_KEY).await {
+        Ok(Some(data)) => data,
+        // No session, or expired — routine "not logged in", no log.
+        Ok(None) => return unauthenticated(),
+        // The store errored: a server fault, not "log in again", so 500 (not 401).
+        Err(err) => {
+            tracing::error!(%err, "failed to read session");
+            return internal_error();
         }
-        _ => unauthenticated(),
+    };
+    let timeout = state.config.session.absolute_timeout_secs as i64;
+    if data.is_live(Utc::now().timestamp(), timeout) && data.selected().is_some() {
+        next.run(req).await
+    } else {
+        unauthenticated()
     }
 }
 
-/// Absolute-lifetime check (idle timeout is enforced by the cookie expiry).
-fn session_is_live(data: &SessionData, state: &AppState) -> bool {
-    let absolute = data
-        .logged_in_at_unix
-        .saturating_add(state.config.session.absolute_timeout_secs as i64);
-    now_unix() < absolute
-}
+/// Request extractor that yields the act-as-user authorization for a
+/// management-API call: it reads the session, refreshes the user's Keycloak
+/// access token if it has expired (persisting the rotation), then exchanges it
+/// (RFC 8693) for an mgmtapi token. The selected account becomes `X-User-Account`.
+impl FromRequestParts<AppState> for UserAuth {
+    type Rejection = Response;
 
-pub(crate) fn unauthenticated() -> Response {
-    (
-        StatusCode::UNAUTHORIZED,
-        Json(json!({ "error": "unauthenticated" })),
-    )
-        .into_response()
-}
+    async fn from_request_parts(
+        parts: &mut Parts,
+        state: &AppState,
+    ) -> Result<Self, Self::Rejection> {
+        let session = Session::from_request_parts(parts, state)
+            .await
+            .map_err(|_| internal_error())?;
 
-pub(crate) fn now_unix() -> i64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs() as i64)
-        .unwrap_or(0)
+        let mut data: SessionData = match session.get(SESSION_DATA_KEY).await {
+            Ok(Some(data)) => data,
+            Ok(None) => return Err(unauthenticated()),
+            Err(err) => {
+                tracing::error!(%err, "failed to read session");
+                return Err(internal_error());
+            }
+        };
+
+        // Renew the user's access token if it has reached expiry, persisting the
+        // rotated tokens. A failed refresh means the session is effectively over.
+        if Utc::now().timestamp() >= data.kc_access_expiry_unix {
+            match state.user_tokens.refresh(&data.kc_refresh_token).await {
+                Ok(refreshed) => {
+                    data.kc_access_token = refreshed.access_token;
+                    data.kc_refresh_token = refreshed.refresh_token;
+                    data.kc_access_expiry_unix = refreshed.access_expiry_unix;
+                    if let Err(err) = session.insert(SESSION_DATA_KEY, &data).await {
+                        tracing::error!(%err, "session insert failed");
+                        return Err(internal_error());
+                    }
+                }
+                Err(err) => {
+                    tracing::warn!(%err, "user token refresh failed; session expired");
+                    return Err(unauthenticated());
+                }
+            }
+        }
+
+        let bearer = state
+            .user_tokens
+            .exchange_for_mgmtapi(&data.kc_access_token)
+            .await
+            .map_err(|err| {
+                tracing::error!(%err, "act-as-user token exchange failed");
+                gateway_error("upstream authentication failed")
+            })?;
+
+        Ok(UserAuth {
+            bearer,
+            account_id: data.selected_account_id,
+        })
+    }
 }

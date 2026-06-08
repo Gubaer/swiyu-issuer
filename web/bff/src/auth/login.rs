@@ -2,6 +2,7 @@
 
 use std::time::Instant;
 
+use chrono::Utc;
 use openidconnect::core::{CoreClient, CoreProviderMetadata, CoreResponseType};
 use openidconnect::{
     AuthenticationFlow, AuthorizationCode, ClientId, ClientSecret, CsrfToken, IssuerUrl, Nonce,
@@ -162,11 +163,12 @@ impl OidcLoginClient {
             .claims(&verifier, &nonce)
             .map_err(|err| LoginError::IdToken(err.to_string()))?;
 
+        let now = Utc::now().timestamp();
         let access_expiry_unix = token_response
             .expires_in()
             .and_then(|ttl| i64::try_from(ttl.as_secs()).ok())
-            .map(|secs| crate::routes::now_unix() + secs)
-            .unwrap_or_else(crate::routes::now_unix);
+            .map(|secs| now + secs)
+            .unwrap_or(now);
 
         Ok(VerifiedUser {
             iss: claims.issuer().as_str().to_string(),
