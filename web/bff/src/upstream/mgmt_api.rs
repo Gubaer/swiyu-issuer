@@ -202,6 +202,94 @@ impl MgmtApiClient {
         read_json(response).await
     }
 
+    pub async fn list_issued_credentials(
+        &self,
+        auth: &UserAuth,
+        issuer_id: &str,
+        limit: Option<u32>,
+        cursor: Option<&str>,
+        state: Option<&str>,
+        vct: Option<&str>,
+    ) -> Result<Value, CallError> {
+        let url = format!("{}/api/v1/issuers/{issuer_id}/credentials", self.base_url);
+        // Only attach query params that are actually present; otherwise the
+        // upstream sees `?limit=` (empty string) and rejects it as malformed.
+        let mut query: Vec<(&str, String)> = Vec::new();
+        if let Some(limit) = limit {
+            query.push(("limit", limit.to_string()));
+        }
+        if let Some(cursor) = cursor {
+            query.push(("cursor", cursor.to_string()));
+        }
+        if let Some(state) = state {
+            query.push(("state", state.to_string()));
+        }
+        if let Some(vct) = vct {
+            query.push(("vct", vct.to_string()));
+        }
+        let response = Self::act_as_user(self.http.get(&url), auth)
+            .query(&query)
+            .send()
+            .await?;
+        read_json(response).await
+    }
+
+    pub async fn get_issued_credential(
+        &self,
+        auth: &UserAuth,
+        issuer_id: &str,
+        credential_id: &str,
+    ) -> Result<Value, CallError> {
+        let url = format!(
+            "{}/api/v1/issuers/{issuer_id}/credentials/{credential_id}",
+            self.base_url
+        );
+        let response = Self::act_as_user(self.http.get(&url), auth).send().await?;
+        read_json(response).await
+    }
+
+    pub async fn suspend_issued_credential(
+        &self,
+        auth: &UserAuth,
+        issuer_id: &str,
+        credential_id: &str,
+    ) -> Result<Value, CallError> {
+        let url = format!(
+            "{}/api/v1/issuers/{issuer_id}/credentials/{credential_id}/suspend",
+            self.base_url
+        );
+        let response = Self::act_as_user(self.http.post(&url), auth).send().await?;
+        read_json(response).await
+    }
+
+    pub async fn unsuspend_issued_credential(
+        &self,
+        auth: &UserAuth,
+        issuer_id: &str,
+        credential_id: &str,
+    ) -> Result<Value, CallError> {
+        let url = format!(
+            "{}/api/v1/issuers/{issuer_id}/credentials/{credential_id}/unsuspend",
+            self.base_url
+        );
+        let response = Self::act_as_user(self.http.post(&url), auth).send().await?;
+        read_json(response).await
+    }
+
+    pub async fn revoke_issued_credential(
+        &self,
+        auth: &UserAuth,
+        issuer_id: &str,
+        credential_id: &str,
+    ) -> Result<Value, CallError> {
+        let url = format!(
+            "{}/api/v1/issuers/{issuer_id}/credentials/{credential_id}/revoke",
+            self.base_url
+        );
+        let response = Self::act_as_user(self.http.post(&url), auth).send().await?;
+        read_json(response).await
+    }
+
     pub async fn list_credential_types(
         &self,
         auth: &UserAuth,
