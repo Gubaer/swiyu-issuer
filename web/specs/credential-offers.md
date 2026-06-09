@@ -1,6 +1,6 @@
 # Credential Offers — list view
 
-This document specifies the **Credential Offers** page in the `swiyu-issuer-web` admin SPA and the two BFF endpoints it depends on. It is a first, narrow slice of the broader Credentials area outlined in [`credential-management-ui.md`](credential-management-ui.md): the list/browse view of an issuer's credential offers, with no creation or lifecycle actions yet.
+This document specifies the **Credential Offers** page in the `swiyu-issuer-web` admin SPA and the two BFF endpoints it depends on. It is a first, narrow slice of a broader Credentials area: the list/browse view of an issuer's credential offers, with no creation or lifecycle actions yet.
 
 Status: preliminary; living document.
 
@@ -17,14 +17,14 @@ In scope:
 
 Out of scope here (deferred):
 
-- The **creation wizard** (`POST /api/issuers/{id}/credential-offers` and the QR / deeplink result view). Covered by [`credential-management-ui.md`](credential-management-ui.md) and will land separately.
+- The **creation wizard** (`POST /api/issuers/{id}/credential-offers` and the QR / deeplink result view). Will land separately.
 - The **offer-detail UI** (a drawer or sub-page showing the full offer, including claims). The BFF endpoint to back it ships in this slice, but no SPA UI consumes it yet — the table's kebab column is a visual placeholder.
 - A **state filter** above the table (the mgmtapi supports `?state=pending|issued|cancelled|expired`; the UI does not surface it yet).
 - **Search by offer id** in the toolbar. The mgmtapi has no search parameter; a client-side filter over loaded pages is possible but deferred.
 - **Polling for pending offers.** The `pending → issued` transition happens when the wallet redeems the pre-authorisation code, asynchronously. The operator triggers a refresh manually.
-- **Cancel / re-show actions** on a row. Covered by the Manage flow in [`credential-management-ui.md`](credential-management-ui.md).
+- **Cancel / re-show actions** on a row. Deferred to a later Manage flow.
 
-Divergence from [`credential-management-ui.md`](credential-management-ui.md) worth flagging: that document proposes a global "Credentials" area with persistent issuer context across Create / Manage submenus. The slice in this document keeps the issuer picker **inside the Credential Offers page**, with the selection encoded in the URL. When the Create flow and a Manage page with multiple tabs land, the issuer-context model from `credential-management-ui.md` is the target end state; the per-page picker is an intermediate that costs nothing to evolve into a shared context later.
+Issuer-context choice worth flagging: a broader Credentials area would eventually want a global, persistent issuer context shared across Create / Manage submenus. The slice in this document keeps the issuer picker **inside the Credential Offers page**, with the selection encoded in the URL. When the Create flow and a Manage page with multiple tabs land, a shared issuer-context model is the target end state; the per-page picker is an intermediate that costs nothing to evolve into a shared context later.
 
 ## Navigation
 
