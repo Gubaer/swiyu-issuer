@@ -1,6 +1,7 @@
 mod auth;
 mod credential_offers;
 mod credential_types;
+mod credentials;
 mod issuers;
 mod me;
 mod operation_tasks;
@@ -86,6 +87,26 @@ pub fn router(state: AppState) -> Router {
         .route(
             "/api/issuers/{issuer_id}/credential-offers/{offer_id}/cancel",
             post(credential_offers::cancel_credential_offer),
+        )
+        .route(
+            "/api/issuers/{issuer_id}/credentials",
+            get(credentials::list_credentials),
+        )
+        .route(
+            "/api/issuers/{issuer_id}/credentials/{credential_id}",
+            get(credentials::get_credential),
+        )
+        .route(
+            "/api/issuers/{issuer_id}/credentials/{credential_id}/suspend",
+            post(credentials::suspend_credential),
+        )
+        .route(
+            "/api/issuers/{issuer_id}/credentials/{credential_id}/unsuspend",
+            post(credentials::resume_credential),
+        )
+        .route(
+            "/api/issuers/{issuer_id}/credentials/{credential_id}/revoke",
+            post(credentials::revoke_credential),
         )
         .route(
             "/api/issuers/{issuer_id}/credential-types",
