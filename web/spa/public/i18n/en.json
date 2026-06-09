@@ -77,6 +77,64 @@
       "error_fetch": "The operation finished but the issuer could not be loaded."
     }
   },
+  "credential": {
+    "list": {
+      "title": "Credentials",
+      "refresh": "Refresh",
+      "issuer_section_title": "Issuer",
+      "issuer_section_hint": "Select the issuer whose credentials you want to view.",
+      "retry": "Retry",
+      "issuers_loading": "Loading issuers…",
+      "no_issuers": "No issuers yet. Create one before issuing credentials.",
+      "issuers_load_error": "Could not load issuers.",
+      "issuer_search_placeholder": "Type to search issuers by name or DID…",
+      "credentials_section_title": "Credentials",
+      "select_issuer_prompt": "Select an issuer above to view its credentials.",
+      "credentials_load_error": "Could not load credentials.",
+      "col_id": "Credential ID",
+      "col_vct": "VCT",
+      "col_state": "State",
+      "col_expired": "Expired",
+      "col_issued": "Issued",
+      "col_expires": "Expires",
+      "expired_yes": "Expired",
+      "empty": "No credentials for this issuer yet.",
+      "load_more": "Load more",
+      "row_actions": "Row actions"
+    },
+    "detail": {
+      "back": "Back to credentials",
+      "title": "Credential",
+      "load_error": "Failed to load this credential.",
+      "id": "Credential ID",
+      "state": "State",
+      "expired": "Expired",
+      "expired_yes": "Yes",
+      "expired_no": "No",
+      "vct": "VCT",
+      "credential_offer_id": "Credential offer ID",
+      "holder_key_jkt": "Holder key thumbprint",
+      "status_list_id": "Status list ID",
+      "status_list_index": "Status list index",
+      "issued": "Issued",
+      "expires": "Expires"
+    },
+    "lifecycle": {
+      "suspend_action": "Suspend",
+      "resume_action": "Resume",
+      "revoke_action": "Revoke",
+      "revoke_confirm_header": "Revoke credential?",
+      "revoke_confirm_message": "Credential “{{id}}” will be permanently revoked and can no longer be used. This cannot be undone.",
+      "revoke_confirm_accept": "Revoke credential",
+      "revoke_confirm_reject": "Keep credential",
+      "suspend_success": "The credential was suspended.",
+      "resume_success": "The credential was resumed.",
+      "revoke_success": "The credential was revoked.",
+      "suspend_error": "Could not suspend the credential.",
+      "resume_error": "Could not resume the credential.",
+      "revoke_error": "Could not revoke the credential."
+    }
+  },
   "credential_offer": {
     "create": {
       "title": "New credential offer",

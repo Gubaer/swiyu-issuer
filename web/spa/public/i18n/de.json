@@ -77,6 +77,64 @@
       "error_fetch": "Der Vorgang wurde abgeschlossen, aber der Aussteller konnte nicht geladen werden."
     }
   },
+  "credential": {
+    "list": {
+      "title": "Credentials",
+      "refresh": "Aktualisieren",
+      "issuer_section_title": "Aussteller",
+      "issuer_section_hint": "Wählen Sie den Aussteller, dessen Credentials Sie ansehen möchten.",
+      "retry": "Erneut versuchen",
+      "issuers_loading": "Aussteller werden geladen…",
+      "no_issuers": "Noch keine Aussteller. Erstellen Sie zuerst einen, bevor Sie Credentials ausstellen.",
+      "issuers_load_error": "Aussteller konnten nicht geladen werden.",
+      "issuer_search_placeholder": "Zum Suchen Name oder DID des Ausstellers eingeben…",
+      "credentials_section_title": "Credentials",
+      "select_issuer_prompt": "Wählen Sie oben einen Aussteller, um dessen Credentials anzuzeigen.",
+      "credentials_load_error": "Credentials konnten nicht geladen werden.",
+      "col_id": "Credential-ID",
+      "col_vct": "VCT",
+      "col_state": "Status",
+      "col_expired": "Abgelaufen",
+      "col_issued": "Ausgestellt",
+      "col_expires": "Läuft ab",
+      "expired_yes": "Abgelaufen",
+      "empty": "Noch keine Credentials für diesen Aussteller.",
+      "load_more": "Mehr laden",
+      "row_actions": "Zeilenaktionen"
+    },
+    "detail": {
+      "back": "Zurück zu den Credentials",
+      "title": "Credential",
+      "load_error": "Dieses Credential konnte nicht geladen werden.",
+      "id": "Credential-ID",
+      "state": "Status",
+      "expired": "Abgelaufen",
+      "expired_yes": "Ja",
+      "expired_no": "Nein",
+      "vct": "VCT",
+      "credential_offer_id": "Credential-Angebots-ID",
+      "holder_key_jkt": "Holder-Key-Fingerabdruck",
+      "status_list_id": "Statuslisten-ID",
+      "status_list_index": "Statuslisten-Index",
+      "issued": "Ausgestellt",
+      "expires": "Läuft ab"
+    },
+    "lifecycle": {
+      "suspend_action": "Sperren",
+      "resume_action": "Entsperren",
+      "revoke_action": "Widerrufen",
+      "revoke_confirm_header": "Credential widerrufen?",
+      "revoke_confirm_message": "Das Credential „{{id}}“ wird dauerhaft widerrufen und kann nicht mehr verwendet werden. Dies kann nicht rückgängig gemacht werden.",
+      "revoke_confirm_accept": "Credential widerrufen",
+      "revoke_confirm_reject": "Credential behalten",
+      "suspend_success": "Das Credential wurde gesperrt.",
+      "resume_success": "Das Credential wurde entsperrt.",
+      "revoke_success": "Das Credential wurde widerrufen.",
+      "suspend_error": "Das Credential konnte nicht gesperrt werden.",
+      "resume_error": "Das Credential konnte nicht entsperrt werden.",
+      "revoke_error": "Das Credential konnte nicht widerrufen werden."
+    }
+  },
   "credential_offer": {
     "create": {
       "title": "Neues Credential-Angebot",

@@ -46,6 +46,16 @@ export const routes: Routes = [
             (m) => m.CredentialOfferDetail,
           ),
       },
+      {
+        path: 'credentials',
+        loadComponent: () =>
+          import('./features/credentials/credentials-list').then((m) => m.CredentialsList),
+      },
+      {
+        path: 'credentials/:id',
+        loadComponent: () =>
+          import('./features/credentials/credential-detail').then((m) => m.CredentialDetail),
+      },
     ],
   },
 ];

@@ -28,7 +28,8 @@ export class AppMenu {
           label: 'Credential Offers',
           icon: 'pi pi-fw pi-send',
           routerLink: ['/credential-offers']
-        }
+        },
+        { label: 'Credentials', icon: 'pi pi-fw pi-verified', routerLink: ['/credentials'] }
       ]
     }
   ];
