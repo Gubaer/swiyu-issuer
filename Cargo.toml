@@ -3,4 +3,4 @@ members = ["api", "web/bff"]
 resolver = "2"
 
 [workspace.package]
-version = "0.1.19"
+version = "0.1.20"
