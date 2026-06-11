@@ -176,7 +176,7 @@ to start fresh (see *Troubleshooting*).
 ## Distribution
 
 This bundle pulls prebuilt images from GitHub Container Registry
-(`ghcr.io/gubaer`); nothing is built locally. Five image families make up the
+(`ghcr.io/gubaer`); nothing is built locally. Six image families make up the
 stack:
 
 | Image | What it is |
@@ -186,26 +186,32 @@ stack:
 | `swiyu-issuer-cli` | CLI, used by the one-shot bootstrap sidecars |
 | `swiyu-issuer-keycloak` | Keycloak with the `swiyu-issuer` realm baked in |
 | `swiyu-issuer-web` | The web UI (Angular SPA + axum BFF) on `:3000` |
+| `swiyu-wallet-sim` | Simulated SWIYU wallet (OID4VCI) on `:8088` |
 
 Postgres and Vault use upstream images (`postgres`, `hashicorp/vault`).
 
 **Tags and versioning.** Every image carries the floating `swiyu-beta` tag
 (latest beta) plus a pinned `<version>-swiyu-beta` tag. The backend images
 (`mgmtapi`/`oidcapi`/`cli`/`keycloak`) share the **api** crate's version and are
-pinned together via `IMAGE_TAG`. The **web UI is versioned independently** (from
-the BFF crate) and pinned separately via `WEB_IMAGE_TAG` — so a backend release
-and a UI release need not move in lock-step. Both default to `swiyu-beta`; see
-`.env.example`.
+pinned together via `IMAGE_TAG`. The **web UI** and the **simulated wallet** are
+each versioned independently (the web UI from the BFF crate, the wallet from its
+own `swiyu-wallet-sim` repo) and pinned separately via `WEB_IMAGE_TAG` and
+`WALLET_IMAGE_TAG` — so a backend release, a UI release, and a wallet release
+need not move in lock-step. All default to `swiyu-beta`; see `.env.example`.
 
 **How the bundle is produced (maintainers).** The two files here are not written
 by hand:
 
 - `docker-compose.yml` is **generated** by `gen-compose.py`, which merges the dev
   composes `api/docker-compose.yml` and `web/docker-compose.yml` and swaps each
-  `build:` for the published `image:`. Regenerate with
-  `uv run gen-compose.py` (and `--check` guards against drift).
-- The images are built and pushed by `publish-images.sh` (`--push` to publish;
-  `REGISTRY` / `PLATFORMS` override the registry and target architectures).
+  `build:` for the published `image:`. The `swiyu-wallet-sim` service has no dev
+  compose in this repo (it lives in a separate repo), so it is appended from a
+  literal defined in `gen-compose.py`. Regenerate with `uv run gen-compose.py`
+  (and `--check` guards against drift).
+- The `swiyu-issuer-*` images are built and pushed by `publish-images.sh`
+  (`--push` to publish; `REGISTRY` / `PLATFORMS` override the registry and target
+  architectures). The `swiyu-wallet-sim` image is built and published from its own
+  repo, not by this script.
 
 ## Troubleshooting
 

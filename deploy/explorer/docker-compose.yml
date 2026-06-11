@@ -1,16 +1,20 @@
 # swiyu-issuer explorer stack — pulls published images from GHCR.
 #
 # Goal: no clone, no cargo, no build — just `docker compose up -d`, then open
-# the web UI at http://localhost:3000.
+# the web UI at http://localhost:3000. The simulated wallet (swiyu-wallet-sim)
+# comes up alongside it at http://localhost:8088.
 #
 # GENERATED FILE. Do not edit by hand. The sources of truth are
-# api/docker-compose.yml and web/docker-compose.yml; regenerate with
+# api/docker-compose.yml and web/docker-compose.yml (plus the swiyu-wallet-sim
+# service literal in gen-compose.py — that project lives in a separate repo, so
+# there is no dev compose here to merge); regenerate with
 #   python3 deploy/explorer/gen-compose.py
 # CI runs `gen-compose.py --check` to block drift.
 #
 # IMAGE_TAG defaults to the floating `swiyu-beta`. Pin to a release by setting
-# e.g. IMAGE_TAG=0.1.12-swiyu-beta in .env. The web UI is versioned separately:
-# pin it with WEB_IMAGE_TAG (also defaults to swiyu-beta).
+# e.g. IMAGE_TAG=0.1.12-swiyu-beta in .env. The web UI and the simulated wallet
+# are versioned separately: pin them with WEB_IMAGE_TAG and WALLET_IMAGE_TAG
+# (both also default to swiyu-beta).
 name: swiyu-issuer
 
 services:
@@ -451,5 +455,17 @@ services:
         condition: service_healthy
       swiyu-issuer-mgmtapi:
         condition: service_healthy
+  # The simulated SWIYU wallet (OID4VCI). Built and published from a separate
+  # repo (swiyu-wallet-sim) and versioned independently, so it pins via its own
+  # WALLET_IMAGE_TAG. A static SPA served by nginx that talks to the issuer OIDC
+  # API from the browser (host side), not over the compose network — hence no
+  # depends_on. The host port is WALLET_HOST_PORT (default 8088); 8088 in-container
+  # is baked into the nginx config at build time from the wallet's web_dev_config.yaml.
+  swiyu-wallet-sim:
+    image: ghcr.io/gubaer/swiyu-wallet-sim:${WALLET_IMAGE_TAG:-swiyu-beta}
+    container_name: swiyu-wallet-sim
+    ports:
+      - "${WALLET_HOST_PORT:-8088}:8088"
+    restart: unless-stopped
 volumes:
   postgres_data:

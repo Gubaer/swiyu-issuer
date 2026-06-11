@@ -55,17 +55,43 @@ EXPLORER_HEADER = """\
 # swiyu-issuer explorer stack — pulls published images from GHCR.
 #
 # Goal: no clone, no cargo, no build — just `docker compose up -d`, then open
-# the web UI at http://localhost:3000.
+# the web UI at http://localhost:3000. The simulated wallet (swiyu-wallet-sim)
+# comes up alongside it at http://localhost:8088.
 #
 # GENERATED FILE. Do not edit by hand. The sources of truth are
-# api/docker-compose.yml and web/docker-compose.yml; regenerate with
+# api/docker-compose.yml and web/docker-compose.yml (plus the swiyu-wallet-sim
+# service literal in gen-compose.py — that project lives in a separate repo, so
+# there is no dev compose here to merge); regenerate with
 #   python3 deploy/explorer/gen-compose.py
 # CI runs `gen-compose.py --check` to block drift.
 #
 # IMAGE_TAG defaults to the floating `swiyu-beta`. Pin to a release by setting
-# e.g. IMAGE_TAG=0.1.12-swiyu-beta in .env. The web UI is versioned separately:
-# pin it with WEB_IMAGE_TAG (also defaults to swiyu-beta).
+# e.g. IMAGE_TAG=0.1.12-swiyu-beta in .env. The web UI and the simulated wallet
+# are versioned separately: pin them with WEB_IMAGE_TAG and WALLET_IMAGE_TAG
+# (both also default to swiyu-beta).
 """
+
+# The simulated SWIYU wallet is built and published from a separate repo
+# (swiyu-wallet-sim), so — unlike every other service — there is no dev compose
+# in this repo to merge. Its service is defined here as a literal. Body only;
+# the explanatory comment is attached to the `swiyu-wallet-sim` key in
+# add_wallet_sim().
+WALLET_SIM_SERVICE = """\
+image: ghcr.io/gubaer/swiyu-wallet-sim:${WALLET_IMAGE_TAG:-swiyu-beta}
+container_name: swiyu-wallet-sim
+ports:
+  - "${WALLET_HOST_PORT:-8088}:8088"
+restart: unless-stopped
+"""
+
+WALLET_SIM_COMMENT = (
+    "The simulated SWIYU wallet (OID4VCI). Built and published from a separate\n"
+    "repo (swiyu-wallet-sim) and versioned independently, so it pins via its own\n"
+    "WALLET_IMAGE_TAG. A static SPA served by nginx that talks to the issuer OIDC\n"
+    "API from the browser (host side), not over the compose network — hence no\n"
+    "depends_on. The host port is WALLET_HOST_PORT (default 8088); 8088 in-container\n"
+    "is baked into the nginx config at build time from the wallet's web_dev_config.yaml."
+)
 
 
 def merge_web(api_data, web_data) -> None:
@@ -96,6 +122,21 @@ def merge_web(api_data, web_data) -> None:
     web_service["depends_on"] = depends_on
 
     api_data["services"]["swiyu-issuer-web"] = web_service
+
+
+def add_wallet_sim(data) -> None:
+    """Append the standalone swiyu-wallet-sim service. Its image lives in a
+    separate repo (no dev compose to merge), so the service is parsed from the
+    WALLET_SIM_SERVICE literal and added last, after the web front end."""
+    yaml = YAML()
+    yaml.preserve_quotes = True
+    service = yaml.load(io.StringIO(WALLET_SIM_SERVICE))
+
+    services = data["services"]
+    services["swiyu-wallet-sim"] = service
+    services.yaml_set_comment_before_after_key(
+        "swiyu-wallet-sim", before=WALLET_SIM_COMMENT, indent=2
+    )
 
 
 def transform(data) -> None:
@@ -145,6 +186,7 @@ def generate(api_compose: Path, web_compose: Path) -> str:
 
     merge_web(api_data, web_data)
     transform(api_data)
+    add_wallet_sim(api_data)
 
     buf = io.StringIO()
     yaml.dump(api_data, buf)
