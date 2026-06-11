@@ -46,6 +46,30 @@ export interface JsonEditorError {
 
 const SCHEMA_URI = 'inmemory://json-editor/value.json';
 
+// Monaco's structural CSS — the `position`/`overflow` rules that make its
+// absolutely-positioned scroll and view layers sit inside the editor box — ships
+// as a stylesheet imported by the editor modules. Angular's production build
+// extracts that into a lazy-chunk CSS file but never injects its <link> (dev
+// inlines it as a <style>, which is why dev looks fine). Without those rules
+// `.overflow-guard` stays `position: static`, so the text layer is positioned
+// against the viewport instead of the editor; once anything offsets the editor
+// from the left edge (e.g. the sidebar margin) the text is pushed out of the clip
+// box and the field looks blank. We load Monaco's self-contained stylesheet (its
+// codicon font is inlined as a data: URI) on demand instead. The path matches the
+// `assets` entry in angular.json. Idempotent across editor instances.
+const MONACO_STYLESHEET_HREF = 'monaco/editor.main.css';
+
+function ensureMonacoStylesheet(): void {
+  if (document.querySelector(`link[data-monaco-css]`)) {
+    return;
+  }
+  const link = document.createElement('link');
+  link.rel = 'stylesheet';
+  link.href = MONACO_STYLESHEET_HREF;
+  link.setAttribute('data-monaco-css', '');
+  document.head.appendChild(link);
+}
+
 // Thin standalone wrapper over Monaco for editing a single JSON document with
 // live JSON-Schema validation. Generic and reusable — it knows nothing about
 // credential offers.
@@ -80,6 +104,11 @@ export class JsonEditor implements OnDestroy {
   private layoutRaf = 0;
 
   constructor() {
+    // Start loading Monaco's stylesheet immediately so the rules are applied by
+    // the time the editor renders (and the editor self-corrects if they arrive
+    // later — they are pure CSS, no relayout needed).
+    ensureMonacoStylesheet();
+
     afterNextRender(() => this.createEditor());
 
     // Push the schema into Monaco's global JSON diagnostics whenever it changes.
