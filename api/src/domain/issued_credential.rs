@@ -6,14 +6,15 @@ use super::status_list::StatusListIndex;
 
 /// Lifecycle state of an [`IssuedCredential`].
 ///
-/// New credentials start in `Active`. `Suspended` is reversible
-/// (`Active` ↔ `Suspended`); `Revoked` is terminal. `Expired` is
-/// **not** a variant — expiry is a derived view at read time,
-/// against the credential's `exp` claim.
+/// `Expired` is **not** a variant — expiry is a derived view at read
+/// time, against the credential's `exp` claim.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum IssuedCredentialState {
+    /// Initial state of every newly issued credential.
     Active,
+    /// Reversible hold; transitions back to `Active` (`Active` ↔ `Suspended`).
     Suspended,
+    /// Terminal state; no transition out of it.
     Revoked,
 }
 
