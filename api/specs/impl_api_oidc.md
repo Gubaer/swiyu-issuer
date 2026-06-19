@@ -16,7 +16,7 @@ This slice provides those wallet-facing endpoints and is the first writer of the
 
 - Pre-authorised code grant flow only. No authorisation code grant, no DPoP, no `client_id` registration, no PAR.
 - One credential format: SD-JWT VC (`vc+sd-jwt`). One credential configuration in the dev seed: `urn:dummy:dummy-credential`.
-- Issuer signing keys loaded from the `swiyu-didtool` filesystem key store, same convention used elsewhere in the codebase. **Note:** [`aspect-key-management.md`](aspect-key-management.md) supersedes this approach (DB-backed `swiyu_issuer_keystore` with AEAD-encryption from day one). v0.1.3 as-written predates that decision; the keystore migration is queued for the slice that follows v0.1.3 and the references in this document — including `signing_key_id` shape, `KEY_STORE_PATH`, and `signer.rs` — reflect the pre-decision design. Treat them as v0.1.3 historical context, not as the current direction.
+- Issuer signing keys are accessed through the `SigningEngine` abstraction (DB-backed, AEAD-encrypted keystore), per [`aspect-key-management.md`](aspect-key-management.md) and [`impl-key-management.md`](impl-key-management.md). A private key never leaves the engine; the credential signer hands it bytes to sign and receives a signature.
 - `did:tdw` 0.3 issuer DIDs, validated end-to-end against the SWIYU integration registry. `did:webvh` 1.0 code paths exist but are not exercised in tests; treat any `did:webvh` behaviour as unverified (per `CLAUDE.md`).
 - One pre-issuance state-list reservation per offer is **out of scope** — credentials issued in v0.1.3 carry no `status` claim. Status integration lands once the status-list slice is in.
 
@@ -41,7 +41,7 @@ This slice provides those wallet-facing endpoints and is the first writer of the
 - `credential.rs` — handler for the credential endpoint.
 - `proof.rs` — wallet `proof` parsing and verification (JWT proof type only at v0.1.3).
 - `nonce.rs` — `c_nonce` issuance and lookup.
-- `signer.rs` — issuer-side credential signing: maps an `IssuerId` to its DID and `KeyStore` handle, signs an SD-JWT VC, embeds `cnf` from the wallet proof.
+- `signer.rs` — issuer-side credential signing: maps an `IssuerId` to its DID and signing-key id, assembles the SD-JWT VC (cleartext envelope claims plus one disclosure per business claim, their digests in `_sd`), embeds `cnf` from the wallet proof, signs the JWT body via the `SigningEngine`, and joins it with the disclosures into the `~`-separated compact form.
 
 `api/src/persistence/oidc/` (new namespace):
 
@@ -180,7 +180,10 @@ Behaviour:
 4. Verify the wallet proof:
 - `proof_type = "jwt"`. The JWT carries the wallet public key in its header (`jwk`), `iss` claim absent, `aud` = issuer URL, `iat` recent, `nonce` = a `c_nonce` previously issued for this offer.
 - Consume the `c_nonce` (delete the row, atomic).
-5. Build the SD-JWT VC: claims from the offer row, `iss` = the issuer DID, `cnf` = the wallet `jwk` from the proof. Sign with the issuer's signing key from `swiyu-didtool`'s key store.
+5. Build the SD-JWT VC:
+   - Envelope claims go in cleartext in the JWT body: `iss` = the issuer DID, `iat`, `cnf` = the wallet `jwk` from the proof, `vct`, and `nbf` / `exp` when the offer sets a validity window. (`status` is added once the status-list slice is in — see *What is deliberately not in v0.1.3*.)
+   - Every business claim from the offer row becomes a selective-disclosure disclosure; only its salted digest appears in the JWT body's `_sd` array. The partition is fixed, not configurable — see [`aspect-credential-type.md`](aspect-credential-type.md) § *Selective disclosure*; the digest/salt/serialisation mechanics live in [`impl-credential-management.md`](impl-credential-management.md) § *SD-JWT VC assembly*.
+   - Sign the JWT body with the issuer's signing key, then join it with the disclosures into the compact form `<jwt>~<disclosure_1>~…~<disclosure_n>~`.
 6. Transition the offer: `mark_issued(conn, tenant, issuer, offer_id, now)` in the same transaction that deletes the access token. The unique constraint on `oidc_access_tokens.offer_id` prevents a second redemption from racing through.
 7. Issue a fresh `c_nonce` for any subsequent batch request (deferred for now: respond with the issued credential and stop).
 
@@ -191,6 +194,8 @@ Response:
   "credential": "eyJ..."
 }
 ```
+
+The `credential` value is the full compact SD-JWT VC — the signed JWT followed by every disclosure, `~`-separated, with the trailing `~`. The issuer emits no Key Binding JWT; the wallet appends a KB-JWT only when presenting to a verifier.
 
 Errors follow the OID4VCI/OAuth shape: `{ "error": "invalid_token" | "invalid_credential_request" | "unsupported_credential_format" | "invalid_proof", "error_description": "..." }`.
 
@@ -210,10 +215,10 @@ Pin one specific OID4VCI draft and reference it in this section once confirmed a
 The `issuers` row gains the columns the issuer metadata endpoint needs to render display metadata and locate the signing key:
 
 - `did text not null` — issuer DID (`did:tdw` or `did:webvh`).
-- `signing_key_id text not null` — handle into the `swiyu-didtool` key store. Format is the keystore's own — opaque to the issuer binary.
+- `signing_key_id text not null` — handle the `SigningEngine` resolves to the issuer's key pair. Format is the engine's own — opaque to the issuer binary.
 - `display_name text`, `logo_uri text`, `locale text` — display metadata, all nullable; the metadata handler omits absent fields. Real branding is wired in by a later admin slice.
 
-These columns ship as a single migration. Existing seed rows are backfilled with the dev DID and key-id used in the developer fixture (see [`swiyu-didtool/specs/key-store.md`]( ../../swiyu-didtool/specs/key-store.md)).
+These columns ship as a single migration. Existing seed rows are backfilled with the dev DID and key-id used in the developer fixture.
 
 ## Configuration
 
@@ -222,7 +227,6 @@ Environment variables consumed by `swiyu-issuer-oidcapi`:
 - `DATABASE_URL` — Postgres connection string.
 - `BIND_ADDR` — listen address, e.g. `0.0.0.0:8081`.
 - `ISSUER_BASE_URL` — public base URL embedded into issuer metadata (`credential_issuer`, `token_endpoint`, …). The management binary already publishes a deeplink against the same value, so the two binaries must agree on it; deployments serve the `/i/…` paths under that base URL via reverse proxy.
-- `KEY_STORE_PATH` — root of the `swiyu-didtool` filesystem keystore.
 - `ACCESS_TOKEN_TTL_SECONDS` — default 300.
 - `C_NONCE_TTL_SECONDS` — default 300.
 
@@ -280,7 +284,7 @@ Although wallet routes don't carry a tenant, every persistence function still re
 
 ## Tests
 
-- Unit tests inside the handler modules exercising request / response shapes against an in-process router with a real Postgres pool and a real signing key (the dev key from the fixture keystore).
+- Unit tests inside the handler modules exercising request / response shapes against an in-process router with a real Postgres pool and a real signing key (the dev key from the `SigningEngine` test fixture).
 - Integration tests under `api/tests/` cover the full redemption flow:
 - **Happy path**: management API creates an offer; the OIDC binary fetches the offer body, exchanges the pre-auth code for a token + nonce, presents a wallet proof, receives a valid SD-JWT VC. The offer row is `issued` with `issued_at` set.
 - **Expired offer**: token endpoint returns `invalid_grant`.
@@ -288,6 +292,7 @@ Although wallet routes don't carry a tenant, every persistence function still re
 - **Wrong nonce**: credential endpoint returns `invalid_proof`.
 - **Wrong vct**: credential endpoint returns `invalid_credential_request`.
 - **Cross-issuer access**: a token minted for issuer A is rejected at issuer B's credential endpoint (`invalid_token`).
+- **Selective disclosure**: the issued credential is `~`-separated with a trailing `~`; its `_sd` array holds one digest per business claim, each matching `base64url(SHA-256(disclosure))` of a returned disclosure; the envelope claims (`iss`, `vct`, `iat`, `cnf`) appear in cleartext and are absent from `_sd`.
 - Every multi-tenant test seeds a second tenant + issuer and asserts cross-tenant access returns the expected error.
 - Signature of the issued SD-JWT VC is verified against the issuer's DID document fetched from the same registry the rest of the codebase uses.
 
@@ -296,7 +301,7 @@ Although wallet routes don't carry a tenant, every persistence function still re
 1. Migration: `oidc_access_tokens`, `oidc_nonces`, and the new columns on `issuers`. Backfill the dev seed.
 2. Domain: lift the `try_issue` transition that already exists on `CredentialOffer`; add `AccessToken` and `Nonce` newtypes with the same hash-on-creation pattern as `PreAuthCode`.
 3. Persistence: `persistence::oidc::credential_offers`, `persistence::oidc::access_tokens`, `persistence::oidc::nonces`. Free functions, `&mut PgConnection`, tenant + issuer in every signature.
-4. Signer: load issuer DIDs and key-store handles at startup, keyed by `IssuerId`. Sign SD-JWT VCs.
+4. Signer: load issuer DIDs and signing-key ids at startup, keyed by `IssuerId`; sign SD-JWT VCs via the `SigningEngine`.
 5. Handlers and DTOs for the five endpoints, wired into a single `api_oidc::router(state)`.
 6. Integration tests per the Tests section.
 

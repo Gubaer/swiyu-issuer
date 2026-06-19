@@ -60,4 +60,5 @@ wiremock = { version = "0.6", optional = true }
 # library as an external consumer and need the feature to be enabled.
 swiyu-issuer = { path = ".", features = ["test-support"] }
 serde_urlencoded = "0.7"
+sha2 = "0.11"
 wiremock = "0.6"

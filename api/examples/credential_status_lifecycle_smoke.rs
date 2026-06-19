@@ -984,9 +984,12 @@ struct StatusPointer {
 }
 
 fn read_status_pointer(credential: &str) -> Result<StatusPointer, String> {
-    // SD-JWT VC: <header>.<payload>.<signature>~  (we want the payload).
-    let core = credential.trim_end_matches('~');
-    let parts: Vec<&str> = core.split('.').collect();
+    // SD-JWT VC: <sd-jwt>~<disclosure 1>~...~<disclosure n>~
+    // The status pointer lives in the signed <sd-jwt> payload (the
+    // first `~`-separated segment); disclosures carry only business
+    // claims and are ignored here.
+    let sd_jwt = credential.split('~').next().unwrap_or_default();
+    let parts: Vec<&str> = sd_jwt.split('.').collect();
     if parts.len() != 3 {
         return Err(format!("expected 3 JWS segments, got {}", parts.len()));
     }

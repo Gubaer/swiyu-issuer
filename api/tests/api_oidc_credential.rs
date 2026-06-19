@@ -15,6 +15,7 @@ use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use chrono::{Duration, Utc};
 use serde_json::{Value, json};
+use sha2::{Digest, Sha256};
 use sqlx::PgPool;
 use tower::ServiceExt;
 
@@ -216,7 +217,10 @@ async fn happy_path_returns_es256_signed_credential(pool: PgPool) {
     assert!(credential.ends_with('~'), "SD-JWT VC ends with `~`");
 
     let core = credential.trim_end_matches('~');
-    let parts: Vec<&str> = core.split('.').collect();
+    // SD-JWT VC: `<sd-jwt>~<disclosure 1>~...~<disclosure n>`. Only the
+    // `<sd-jwt>` (the first `~`-separated segment) is the signed JWS.
+    let sd_jwt = core.split('~').next().unwrap();
+    let parts: Vec<&str> = sd_jwt.split('.').collect();
     assert_eq!(parts.len(), 3, "JWS has three segments");
 
     let header_json: Value =
@@ -232,8 +236,34 @@ async fn happy_path_returns_es256_signed_credential(pool: PgPool) {
         serde_json::from_slice(&URL_SAFE_NO_PAD.decode(parts[1]).unwrap()).unwrap();
     assert_eq!(payload_json["iss"], issuer.did);
     assert_eq!(payload_json["vct"], "vc-test");
-    assert_eq!(payload_json["name"], "Alice");
-    assert_eq!(payload_json["age"], 30);
+    assert_eq!(payload_json["_sd_alg"], "sha-256");
+    // Business claims are selectively disclosed: digests in `_sd`,
+    // values in `~`-appended disclosures, never plaintext in the body.
+    assert!(payload_json.get("name").is_none());
+    assert!(payload_json.get("age").is_none());
+
+    let sd_digests: Vec<String> = payload_json["_sd"]
+        .as_array()
+        .expect("_sd is an array")
+        .iter()
+        .map(|d| d.as_str().unwrap().to_string())
+        .collect();
+    assert_eq!(sd_digests.len(), 2, "one digest per business claim");
+
+    let mut disclosed = serde_json::Map::new();
+    for disclosure in core.split('~').skip(1) {
+        let bytes = URL_SAFE_NO_PAD.decode(disclosure).unwrap();
+        let array: Vec<Value> = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(array.len(), 3, "disclosure is [salt, name, value]");
+        let digest = URL_SAFE_NO_PAD.encode(Sha256::digest(disclosure.as_bytes()));
+        assert!(
+            sd_digests.contains(&digest),
+            "every disclosure digest appears in _sd"
+        );
+        disclosed.insert(array[1].as_str().unwrap().to_string(), array[2].clone());
+    }
+    assert_eq!(disclosed["name"], "Alice");
+    assert_eq!(disclosed["age"], 30);
 
     // P-256 signatures in JWS are raw R||S — fixed 64 bytes.
     let sig_bytes = URL_SAFE_NO_PAD.decode(parts[2]).unwrap();

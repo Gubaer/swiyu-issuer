@@ -33,7 +33,7 @@ pub struct IssuedCredential {
     pub status_list_id: StatusListId,
     pub status_list_index: StatusListIndex,
     pub state: IssuedCredentialState,
-    pub integrity_hash: [u8; 32],      // SHA-256 of the signed compact serialisation
+    pub integrity_hash: [u8; 32],      // SHA-256 of the issued SD-JWT VC (JWT + disclosures, ~-joined)
     pub issued_at: DateTime<Utc>,
     pub expires_at: DateTime<Utc>,
 }
@@ -190,15 +190,45 @@ Inside the existing `api_oidc::credential` handler, after PoP verification and o
        RETURNING allocated_count - 1 AS allocated_index;
    ```
    The capacity guard in the `WHERE` clause races safely against capacity overflow: a losing concurrent issuance gets zero rows and falls back to step 2's provisioning branch.
-4. Build the SD-JWT VC payload with the `status.status_list` claim carrying `{ "type": "SwissTokenStatusList-1.0", "idx": allocated_index, "uri": status_list_url(list_id) }`.
-5. Sign via the issuer's assertion key.
-6. Compute `integrity_hash = SHA-256(compact_serialisation)`.
+4. Assemble the SD-JWT VC (see *SD-JWT VC assembly* below): partition the claims, turn each business claim into a disclosure, place the disclosure digests in the `_sd` array, and add the cleartext envelope claims — including the `status.status_list` claim carrying `{ "type": "SwissTokenStatusList-1.0", "idx": allocated_index, "uri": status_list_url(list_id) }`.
+5. Sign the JWT body via the issuer's assertion key, then append the disclosures to form the compact serialisation `<jwt>~<disclosure_1>~…~<disclosure_n>~`.
+6. Compute `integrity_hash = SHA-256(compact_serialisation)` over that full `~`-joined form — disclosures included.
 7. Insert the `issued_credentials` row.
 8. Transition the `credential_offers` row to `Issued` and clear `pre_auth_code`.
 9. Commit.
 10. Return the signed credential to the wallet.
 
 Failure between steps 5 and 9 leaves `allocated_count` incremented without a corresponding `issued_credentials` row — an "index leak". The leak is bounded by issuance failure rate; at 131 072 indices per list the practical impact is negligible. Reclaiming leaked indices is explicitly not modelled (see [`aspect-credential-management.md`](aspect-credential-management.md) § *Open*).
+
+### SD-JWT VC assembly
+
+The wire format is SD-JWT VC (`vc+sd-jwt`), a selective-disclosure format: the signed JWT carries salted digests of the disclosable claims rather than their values, and the disclosures travel alongside the JWT so the holder can later forward only a chosen subset to a verifier. Each disclosure carries the claim's cleartext value (base64url is encoding, not encryption), and the holder receives every disclosure at issuance — so the holder can inspect all claim values; selectivity governs only which disclosures the holder later forwards to a verifier, not what the holder itself can read. The claim partition is fixed and identical for every credential type — not stored on `CredentialType`, not configurable per claim or per issuer; [`aspect-credential-type.md`](aspect-credential-type.md) § *Selective disclosure* owns the policy, this section owns the mechanics it defers here.
+
+**Partition.** Applied at assembly time, derived entirely from the offer and the type — no selective-disclosure configuration is read from anywhere:
+
+- **Cleartext (in the JWT body).** The registered envelope claims only: `iss`, `vct`, `iat`, `cnf`, and `status` (present when the type's `revocation_mode` is not `none`), plus `nbf` / `exp` when a validity window is set. These are never turned into disclosures.
+- **Selectively disclosable.** Every business claim from the offer row, without exception.
+
+**Per disclosable claim**, build one disclosure:
+
+1. Generate a fresh 128-bit salt from a CSPRNG, base64url-encoded (`URL_SAFE_NO_PAD`).
+2. Form the array `[salt, claim_name, claim_value]` and serialise it as JSON.
+3. base64url-encode (`URL_SAFE_NO_PAD`) the UTF-8 JSON bytes → the **disclosure string**.
+4. The claim's digest is `base64url(SHA-256(ascii(disclosure_string)))`.
+
+Collect every digest into the `_sd` array on the JWT body and set `_sd_alg = "sha-256"`. `_sd`, `_sd_alg`, and the array-element placeholder `...` are structural members, never disclosures.
+
+**Disclosure granularity.** A top-level business claim whose value is an object or array is emitted as a single whole-value disclosure (the entire value rides on one disclosure). Recursive per-property / per-element decomposition is deliberately out of scope — see [`aspect-credential-type.md`](aspect-credential-type.md) § *Open questions — Disclosure granularity for nested objects and arrays*.
+
+**Compact serialisation.** Sign the JWT body, then join it with the disclosures using `~`:
+
+```
+<signed-jwt>~<disclosure_1>~…~<disclosure_n>~
+```
+
+The trailing `~` is required: the issuer emits no Key Binding JWT — the holder adds the KB-JWT only when presenting to a verifier. This `~`-joined string is what is returned to the wallet and what `integrity_hash` is computed over.
+
+No decoy digests are added — see [`aspect-credential-type.md`](aspect-credential-type.md) § *Open questions — Decoy digests*.
 
 ### Suspend / unsuspend / revoke (management API)
 
@@ -362,6 +392,7 @@ No `task_id` is returned for credential-lifecycle operations in v0.1.0; see [`as
 - Unit tests in the publish worker module against a stubbed `StatusRegistryClient` (success, retryable failure, terminal failure, conditional-update no-op when a concurrent publish already advanced the version).
 - Integration tests under `api/tests/` driving full flows with a real Postgres pool (via `sqlx::test`) and a stubbed Status Registry:
   - Issuance happy-path: inserts an `issued_credentials` row with the expected `(status_list_id, status_list_index)`, increments `allocated_count`, bumps `committed_version`, transitions the offer to `Issued`.
+  - SD-JWT VC assembly: the issued credential carries one disclosure per business claim with each `base64url(SHA-256(disclosure))` present in `_sd`; envelope claims (`iss`, `vct`, `iat`, `cnf`, `status`) stay cleartext and are absent from `_sd`; `integrity_hash` equals `SHA-256` of the `~`-joined serialisation.
   - Concurrent issuance race: two simultaneous issuances on the same list allocate adjacent indices without overlap.
   - Capacity overflow: filling a list provisions a second `status_lists` row and re-points `issuers.current_status_list_id`.
   - Suspend / unsuspend / revoke round-trip flips the bit, bumps `committed_version`, and rejects illegal state transitions.

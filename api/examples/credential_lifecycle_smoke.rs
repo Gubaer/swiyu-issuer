@@ -862,9 +862,11 @@ fn extract_assertion_key(log: &DIDLog, did_str: &str) -> Result<VerifyingKey, St
 }
 
 fn verify_jws(credential: &str, key: &VerifyingKey) -> Result<(), PhaseError> {
-    // SD-JWT VC: <header_b64>.<payload_b64>.<signature_b64>~
-    let core = credential.trim_end_matches('~');
-    let parts: Vec<&str> = core.split('.').collect();
+    // SD-JWT VC: <sd-jwt>~<disclosure 1>~...~<disclosure n>~
+    // Only the <sd-jwt> (the first `~`-separated segment) is signed;
+    // disclosures ride after it and are not covered by the signature.
+    let sd_jwt = credential.split('~').next().unwrap_or_default();
+    let parts: Vec<&str> = sd_jwt.split('.').collect();
     if parts.len() != 3 {
         return Err(PhaseError::Crypto(format!(
             "expected three JWS segments, got {}",

@@ -618,17 +618,26 @@ fn invalid_proof_structure() -> OAuthError {
     }
 }
 
-/// Builds a degenerate SD-JWT VC: a JWS whose payload carries every
-/// claim plaintext (no `_sd`, no disclosures), terminated by a
-/// trailing tilde so the format is wire-shape compatible with the
-/// SD-JWT VC spec.
+/// Builds an SD-JWT VC: an issuer-signed JWT plus one salted disclosure
+/// per top-level business claim.
 ///
-/// Real selective disclosure lands in a follow-up slice once a
-/// per-credential-type policy on which claims are disclosable
-/// exists.
+/// Structure of the resulting string value:
+/// ```text
+/// <sd-jwt>~<disclosure 1>~...~<disclosure n>~
+/// ```
+/// The signed `<sd-jwt>` carries only the cleartext envelope (`iss`,
+/// `iat`, `exp`, `vct`, `cnf`, `status`) together with an `_sd` array
+/// of disclosure digests and `_sd_alg: "sha-256"`. Each business claim
+/// from the offer rides as a `<disclosure i>`; its SHA-256
+/// digest is the only trace left in `<sd-jwt>`. The compact form
+/// ends in a trailing `~`.
 ///
-/// The JWS is signed with the issuer's Assertion key (P-256 / ES256)
-/// via [`SigningEngine::sign`]. ES256 in JWS hashes the signing
+/// Disclosure granularity is whole-value: a claim whose value is an
+/// object or array becomes a single disclosure carrying the entire
+/// value, not one disclosure per nested field.
+///
+/// The `<sd-jwt>` is signed with the issuer's Assertion key (P-256 /
+/// ES256) via [`SigningEngine::sign`]. ES256 hashes the signing
 /// input with SHA-256 and signs the digest; both
 /// [`DevSigningEngine`][crate::domain::DevSigningEngine] and
 /// [`VaultSigningEngine`][crate::domain::VaultSigningEngine] expect
@@ -667,13 +676,20 @@ async fn build_sd_jwt_vc<S: SigningEngine>(
     payload.insert("vct".to_string(), Value::String(offer.vct.clone()));
     payload.insert("cnf".to_string(), json!({ "jwk": cnf_jwk.clone() }));
     payload.insert("status".to_string(), status_claim.clone());
-    // All claims are plaintext in the payload (degenerate SD-JWT —
-    // no `_sd` array, no salted disclosures).
+
+    // Each business claim becomes a salted disclosure; only its digest
+    // rides in the signed body, under `_sd`.
+    let mut disclosures: Vec<String> = Vec::new();
+    let mut sd_digests: Vec<Value> = Vec::new();
     if let Value::Object(claims) = &offer.claims {
-        for (k, v) in claims {
-            payload.insert(k.clone(), v.clone());
+        for (name, value) in claims {
+            let (disclosure, digest) = build_disclosure(&fresh_salt(), name, value)?;
+            disclosures.push(disclosure);
+            sd_digests.push(Value::String(digest));
         }
     }
+    payload.insert("_sd".to_string(), Value::Array(sd_digests));
+    payload.insert("_sd_alg".to_string(), Value::String("sha-256".to_string()));
     let payload = Value::Object(payload);
 
     let header_b64 = URL_SAFE_NO_PAD.encode(serde_json::to_vec(&header)?);
@@ -683,9 +699,37 @@ async fn build_sd_jwt_vc<S: SigningEngine>(
     let signature = engine.sign(assertion_key_id, &digest).await?;
     let signature_b64 = URL_SAFE_NO_PAD.encode(&signature.bytes);
 
-    // Trailing `~` separator with zero disclosures — minimum
-    // spec-conformant SD-JWT VC.
-    Ok(format!("{header_b64}.{payload_b64}.{signature_b64}~"))
+    // Compact serialisation: the `<sd-jwt>`, then each disclosure, each
+    // segment followed by `~`. With no disclosures this is just
+    // `<sd-jwt>~`.
+    let mut credential = format!("{header_b64}.{payload_b64}.{signature_b64}");
+    for disclosure in &disclosures {
+        credential.push('~');
+        credential.push_str(disclosure);
+    }
+    credential.push('~');
+    Ok(credential)
+}
+
+/// Builds a single SD-JWT disclosure for one business claim.
+///
+/// Returns the base64url disclosure string — the JSON array
+/// `[salt, name, value]` encoded with `URL_SAFE_NO_PAD` — and its
+/// digest `base64url(SHA-256(ascii(disclosure)))`, which is what the
+/// signed body carries in `_sd`. Pure and deterministic given the
+/// salt, so the wire contract is fixture-testable.
+fn build_disclosure(salt: &str, name: &str, value: &Value) -> Result<(String, String), BuildError> {
+    let array = json!([salt, name, value]);
+    let disclosure = URL_SAFE_NO_PAD.encode(serde_json::to_vec(&array)?);
+    let digest = URL_SAFE_NO_PAD.encode(Sha256::digest(disclosure.as_bytes()));
+    Ok((disclosure, digest))
+}
+
+/// A fresh 128-bit salt from the OS CSPRNG, base64url-encoded.
+fn fresh_salt() -> String {
+    let mut bytes = [0u8; 16];
+    getrandom::fill(&mut bytes).expect("OS RNG must be available");
+    URL_SAFE_NO_PAD.encode(bytes)
 }
 
 #[derive(Debug, Error)]
@@ -904,8 +948,10 @@ mod tests {
 
         fn split_jws(credential: &str) -> (Value, Value, Vec<u8>) {
             assert!(credential.ends_with('~'), "SD-JWT VC ends with `~`");
-            let core = credential.trim_end_matches('~');
-            let parts: Vec<&str> = core.split('.').collect();
+            // Only the `<sd-jwt>` (the first `~`-separated segment) is the
+            // JWS; disclosures ride after it and must not be parsed here.
+            let sd_jwt = credential.split('~').next().unwrap();
+            let parts: Vec<&str> = sd_jwt.split('.').collect();
             assert_eq!(parts.len(), 3, "JWS has three segments");
             let header: Value =
                 serde_json::from_slice(&URL_SAFE_NO_PAD.decode(parts[0]).unwrap()).unwrap();
@@ -943,8 +989,47 @@ mod tests {
             assert_eq!(header["kid"], format!("{FIXTURE_DID}#assertion-key-01"));
         }
 
+        /// Returns the `~`-separated disclosure segments (the parts
+        /// after the `<sd-jwt>`, excluding the trailing empty segment).
+        fn disclosures_of(credential: &str) -> Vec<String> {
+            assert!(credential.ends_with('~'), "SD-JWT VC ends with `~`");
+            credential
+                .trim_end_matches('~')
+                .split('~')
+                .skip(1)
+                .map(str::to_string)
+                .collect()
+        }
+
+        /// Decodes a disclosure into its `(salt, claim_name, claim_value)`
+        /// triple, asserting the wire contract: a three-element JSON array
+        /// whose first two elements are strings. The claim value may be any
+        /// JSON type, so it is returned as a [`Value`].
+        fn decode_disclosure(disclosure: &str) -> (String, String, Value) {
+            let bytes = URL_SAFE_NO_PAD.decode(disclosure).unwrap();
+            let elements = match serde_json::from_slice(&bytes).unwrap() {
+                Value::Array(elements) => elements,
+                other => panic!("disclosure is not a JSON array: {other}"),
+            };
+            let [salt, name, value] = <[Value; 3]>::try_from(elements).unwrap_or_else(|elements| {
+                panic!(
+                    "disclosure must have exactly 3 elements, got {}",
+                    elements.len()
+                )
+            });
+            let salt = salt
+                .as_str()
+                .unwrap_or_else(|| panic!("disclosure salt must be a string, got {salt}"))
+                .to_string();
+            let name = name
+                .as_str()
+                .unwrap_or_else(|| panic!("disclosure claim name must be a string, got {name}"))
+                .to_string();
+            (salt, name, value)
+        }
+
         #[tokio::test]
-        async fn payload_carries_iss_vct_cnf_and_offer_claims() {
+        async fn payload_carries_envelope_cleartext_but_not_business_claims() {
             let engine = MockSigningEngine::new();
             engine.enqueue_sign(SignCall::Ok(fixture_signature()));
             let assertion_key_id = KeyPairId::generate();
@@ -973,8 +1058,132 @@ mod tests {
             assert_eq!(payload["iat"], now.timestamp());
             assert_eq!(payload["exp"], expires_at.timestamp());
             assert_eq!(payload["cnf"]["jwk"], cnf_jwk);
-            assert_eq!(payload["name"], "Alice");
-            assert_eq!(payload["age"], 30);
+            assert_eq!(payload["_sd_alg"], "sha-256");
+            assert!(payload["_sd"].is_array());
+            // Business claims are selectively disclosed, never plaintext.
+            assert!(payload.get("name").is_none());
+            assert!(payload.get("age").is_none());
+        }
+
+        #[test]
+        fn build_disclosure_matches_known_vector() {
+            // Fixed salt + name + value lock the byte-level wire
+            // contract: JSON array shape, base64url alphabet, no padding.
+            let salt = "MTIzNDU2Nzg5MGFiY2RlZg";
+            let (disclosure, digest) =
+                build_disclosure(salt, "given_name", &json!("Alice")).unwrap();
+
+            let expected_disclosure =
+                URL_SAFE_NO_PAD.encode(br#"["MTIzNDU2Nzg5MGFiY2RlZg","given_name","Alice"]"#);
+            assert_eq!(disclosure, expected_disclosure);
+
+            let expected_digest = URL_SAFE_NO_PAD.encode(Sha256::digest(disclosure.as_bytes()));
+            assert_eq!(digest, expected_digest);
+        }
+
+        #[tokio::test]
+        async fn each_business_claim_round_trips_through_a_disclosure() {
+            let engine = MockSigningEngine::new();
+            engine.enqueue_sign(SignCall::Ok(fixture_signature()));
+            let assertion_key_id = KeyPairId::generate();
+            let issuer = fixture_issuer(assertion_key_id);
+            let offer = fixture_offer(json!({"name": "Alice", "age": 30}));
+            let now = Utc::now();
+
+            let credential = build_sd_jwt_vc(
+                &engine,
+                &assertion_key_id,
+                &issuer,
+                &offer,
+                &json!({}),
+                &fixture_status_claim(),
+                now,
+                fixture_expires_at(now),
+            )
+            .await
+            .unwrap();
+
+            let (_, payload, _) = split_jws(&credential);
+            let sd_digests: Vec<&str> = payload["_sd"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|d| d.as_str().unwrap())
+                .collect();
+
+            let disclosures = disclosures_of(&credential);
+            assert_eq!(disclosures.len(), 2, "one disclosure per business claim");
+            assert_eq!(sd_digests.len(), 2, "one digest per business claim");
+
+            let mut recovered = serde_json::Map::new();
+            for disclosure in &disclosures {
+                let digest = URL_SAFE_NO_PAD.encode(Sha256::digest(disclosure.as_bytes()));
+                assert!(
+                    sd_digests.contains(&digest.as_str()),
+                    "every disclosure digest appears in _sd"
+                );
+                let (_salt, name, value) = decode_disclosure(disclosure);
+                recovered.insert(name, value);
+            }
+            assert_eq!(recovered["name"], json!("Alice"));
+            assert_eq!(recovered["age"], json!(30));
+        }
+
+        #[tokio::test]
+        async fn zero_business_claims_yields_empty_sd_and_no_disclosures() {
+            let engine = MockSigningEngine::new();
+            engine.enqueue_sign(SignCall::Ok(fixture_signature()));
+            let assertion_key_id = KeyPairId::generate();
+            let issuer = fixture_issuer(assertion_key_id);
+            let offer = fixture_offer(json!({}));
+            let now = Utc::now();
+
+            let credential = build_sd_jwt_vc(
+                &engine,
+                &assertion_key_id,
+                &issuer,
+                &offer,
+                &json!({}),
+                &fixture_status_claim(),
+                now,
+                fixture_expires_at(now),
+            )
+            .await
+            .unwrap();
+
+            let (_, payload, _) = split_jws(&credential);
+            assert_eq!(payload["_sd"], json!([]));
+            assert!(disclosures_of(&credential).is_empty());
+        }
+
+        #[tokio::test]
+        async fn object_valued_claim_becomes_a_single_whole_value_disclosure() {
+            let engine = MockSigningEngine::new();
+            engine.enqueue_sign(SignCall::Ok(fixture_signature()));
+            let assertion_key_id = KeyPairId::generate();
+            let issuer = fixture_issuer(assertion_key_id);
+            let address = json!({"street": "Bahnhofstrasse 1", "city": "Zürich"});
+            let offer = fixture_offer(json!({"address": address.clone()}));
+            let now = Utc::now();
+
+            let credential = build_sd_jwt_vc(
+                &engine,
+                &assertion_key_id,
+                &issuer,
+                &offer,
+                &json!({}),
+                &fixture_status_claim(),
+                now,
+                fixture_expires_at(now),
+            )
+            .await
+            .unwrap();
+
+            let disclosures = disclosures_of(&credential);
+            assert_eq!(disclosures.len(), 1, "one disclosure for the whole object");
+            let (_salt, name, value) = decode_disclosure(&disclosures[0]);
+            assert_eq!(name, "address");
+            assert_eq!(value, address, "the entire object value is disclosed");
         }
 
         #[tokio::test]
