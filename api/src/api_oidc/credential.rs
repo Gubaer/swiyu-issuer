@@ -8,6 +8,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
+use swiyu_core::sd_jwt::Disclosure;
 use thiserror::Error;
 
 use crate::domain::{
@@ -679,13 +680,13 @@ async fn build_sd_jwt_vc<S: SigningEngine>(
 
     // Each business claim becomes a salted disclosure; only its digest
     // rides in the signed body, under `_sd`.
-    let mut disclosures: Vec<String> = Vec::new();
+    let mut disclosures: Vec<Disclosure> = Vec::new();
     let mut sd_digests: Vec<Value> = Vec::new();
     if let Value::Object(claims) = &offer.claims {
         for (name, value) in claims {
-            let (disclosure, digest) = build_disclosure(&fresh_salt(), name, value)?;
+            let disclosure = Disclosure::new(fresh_salt(), name, value.clone());
+            sd_digests.push(Value::String(disclosure.digest()));
             disclosures.push(disclosure);
-            sd_digests.push(Value::String(digest));
         }
     }
     payload.insert("_sd".to_string(), Value::Array(sd_digests));
@@ -705,24 +706,10 @@ async fn build_sd_jwt_vc<S: SigningEngine>(
     let mut credential = format!("{header_b64}.{payload_b64}.{signature_b64}");
     for disclosure in &disclosures {
         credential.push('~');
-        credential.push_str(disclosure);
+        credential.push_str(&disclosure.to_string());
     }
     credential.push('~');
     Ok(credential)
-}
-
-/// Builds a single SD-JWT disclosure for one business claim.
-///
-/// Returns the base64url disclosure string — the JSON array
-/// `[salt, name, value]` encoded with `URL_SAFE_NO_PAD` — and its
-/// digest `base64url(SHA-256(ascii(disclosure)))`, which is what the
-/// signed body carries in `_sd`. Pure and deterministic given the
-/// salt, so the wire contract is fixture-testable.
-fn build_disclosure(salt: &str, name: &str, value: &Value) -> Result<(String, String), BuildError> {
-    let array = json!([salt, name, value]);
-    let disclosure = URL_SAFE_NO_PAD.encode(serde_json::to_vec(&array)?);
-    let digest = URL_SAFE_NO_PAD.encode(Sha256::digest(disclosure.as_bytes()));
-    Ok((disclosure, digest))
 }
 
 /// A fresh 128-bit salt from the OS CSPRNG, base64url-encoded.
@@ -1063,22 +1050,6 @@ mod tests {
             // Business claims are selectively disclosed, never plaintext.
             assert!(payload.get("name").is_none());
             assert!(payload.get("age").is_none());
-        }
-
-        #[test]
-        fn build_disclosure_matches_known_vector() {
-            // Fixed salt + name + value lock the byte-level wire
-            // contract: JSON array shape, base64url alphabet, no padding.
-            let salt = "MTIzNDU2Nzg5MGFiY2RlZg";
-            let (disclosure, digest) =
-                build_disclosure(salt, "given_name", &json!("Alice")).unwrap();
-
-            let expected_disclosure =
-                URL_SAFE_NO_PAD.encode(br#"["MTIzNDU2Nzg5MGFiY2RlZg","given_name","Alice"]"#);
-            assert_eq!(disclosure, expected_disclosure);
-
-            let expected_digest = URL_SAFE_NO_PAD.encode(Sha256::digest(disclosure.as_bytes()));
-            assert_eq!(digest, expected_digest);
         }
 
         #[tokio::test]

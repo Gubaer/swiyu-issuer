@@ -3471,7 +3471,7 @@ checksum = "13c2bddecc57b384dee18652358fb23172facb8a2c51ccc10d74c157bdea3292"
 [[package]]
 name = "swiyu-core"
 version = "0.3.2"
-source = "git+https://github.com/Gubaer/swiyu-rs.git?tag=shared-crates-2026-06-01#a225ebf2fc767d73c5b31337ff1b3eb15b341f85"
+source = "git+https://github.com/Gubaer/swiyu-rs.git?tag=shared-crates-2026-06-19#9a6d3ca827f5820c6152da9bd176f0e19fa9c570"
 dependencies = [
  "base64 0.22.1",
  "bs58",
@@ -3550,7 +3550,7 @@ dependencies = [
 [[package]]
 name = "swiyu-registries"
 version = "0.1.3"
-source = "git+https://github.com/Gubaer/swiyu-rs.git?tag=shared-crates-2026-06-01#a225ebf2fc767d73c5b31337ff1b3eb15b341f85"
+source = "git+https://github.com/Gubaer/swiyu-rs.git?tag=shared-crates-2026-06-19#9a6d3ca827f5820c6152da9bd176f0e19fa9c570"
 dependencies = [
  "reqwest 0.13.1",
  "serde",
