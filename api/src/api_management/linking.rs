@@ -131,7 +131,8 @@ pub async fn resolve(
         .await
         .map_err(|err| ApiError::Internal(Box::new(err)))?;
 
-    let accounts = persistence::user_accounts::resolve_linked_accounts(&mut conn, &identity).await?;
+    let accounts =
+        persistence::user_accounts::resolve_linked_accounts(&mut conn, &identity).await?;
     let items = accounts
         .into_iter()
         .map(|resolved| user_account_to_response(resolved.account, resolved.tenant_display_name))

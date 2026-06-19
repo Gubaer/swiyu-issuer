@@ -192,8 +192,7 @@ async fn resolve_returns_linked_accounts(pool: PgPool) {
     .await
     .expect("link_identity should succeed");
 
-    let query =
-        serde_urlencoded::to_string([("iss", SAMPLE_IDP_ISS), ("sub", "user-1")]).unwrap();
+    let query = serde_urlencoded::to_string([("iss", SAMPLE_IDP_ISS), ("sub", "user-1")]).unwrap();
     let first_party = mint_first_party_token();
     let response = app
         .oneshot(get_request(
@@ -214,8 +213,7 @@ async fn resolve_with_tenant_token_is_unauthorised(pool: PgPool) {
     let (state, _tenant_id, tenant_secret) = authenticated_app_state(&pool).await;
     let app = router(state);
 
-    let query =
-        serde_urlencoded::to_string([("iss", SAMPLE_IDP_ISS), ("sub", "user-1")]).unwrap();
+    let query = serde_urlencoded::to_string([("iss", SAMPLE_IDP_ISS), ("sub", "user-1")]).unwrap();
     let response = app
         .oneshot(get_request(
             &format!("/api/v1/linked-user-accounts?{query}"),
